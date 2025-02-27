@@ -41,7 +41,4 @@ The dataset is obtained from the following sources:
    - [Download Gene Association Data](https://drive.google.com/file/d/1lDDL6cy8LljFoHUu7nYo3mR58SsdcuuH/view?usp=drive_link)
 
 7. To train the model, run the following command:
-   - `python attag/_gene_prediction_attag_ggnet.py --model_type ATTAG --net_type ppnet --score_threshold 0.99 --learning_rate 0.001 --num_epochs 300`
-
-## (kg39) ericsali@erics-MBP-4 ATTAG % python attag/_gene_prediction_attag_ggnet.py --model_type ATTAG --net_type ppnet --score_threshold 0.99 --learning_rate 0.001 --num_epochs 300
-
+   - `python attag/train.py --model_type ATTAG --net_type ppnet --score_threshold 0.99 --learning_rate 0.001 --num_epochs 300`
