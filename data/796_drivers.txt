@@ -1,0 +1,12 @@
+| Rank | Feature         | Total Saliency |
+| ---- | --------------- | -------------- |
+| 1    | MF: Liver       | 1703.35        |
+| 2    | GE: LungSC      | 1624.82        |
+| 3    | GE: Rectum      | 1427.73        |
+| 4    | GE: Bladder     | 1418.64        |
+| 5    | CNA: Bladder    | 1327.11        |
+| 6    | GE: LungAD      | 1214.94        |
+| 7    | METH: Colon     | 1182.25        |
+| 8    | METH: Esophagus | 1168.37        |
+| 9    | GE: Thyroid     | 1162.49        |
+| 10   | METH: Prostate  | 1111.22        |
