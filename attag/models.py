@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+<<<<<<< HEAD
 import dgl.function as fn
+=======
+>>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
 from torch_geometric.nn import GCNConv
 from torch.nn import Linear
 from dgl.nn import SAGEConv, GATConv, GraphConv, GINConv, ChebConv, TAGConv
@@ -9,7 +12,13 @@ from torch_geometric.utils import dropout_edge, negative_sampling, remove_self_l
 
 
 class AttentionLayer(nn.Module):
+<<<<<<< HEAD
 
+=======
+    """
+    Node-level attention mechanism for weighting neighbor contributions.
+    """
+>>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     def __init__(self, hidden_feats):
         super(AttentionLayer, self).__init__()
         self.attn = nn.Linear(2 * hidden_feats, 1)  # Learnable attention weights
@@ -38,6 +47,18 @@ class AttentionLayer(nn.Module):
 
 class ATTAG(nn.Module):
     def __init__(self, in_feats, hidden_feats, out_feats, k=3):
+<<<<<<< HEAD
+=======
+        """
+        Topology Adaptive Graph Convolution Network (ATTAG) with attention and GPU support.
+        
+        Parameters:
+        - in_feats: Number of input features.
+        - hidden_feats: Number of hidden layer features.
+        - out_feats: Number of output features.
+        - k: Number of hops in TAGConv.
+        """
+>>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
         super(ATTAG, self).__init__()
         self.tag1 = TAGConv(in_feats, hidden_feats, k)
         self.tag2 = TAGConv(hidden_feats, hidden_feats, k)
@@ -70,8 +91,28 @@ class ATTAG(nn.Module):
 
         return self.mlp(x)
     
+<<<<<<< HEAD
 class MOGAT(nn.Module):
     def __init__(self, in_feats, hidden_feats, out_feats, heads=4, dropout=0.6):
+=======
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from dgl.nn import GATConv
+
+class MOGAT(nn.Module):
+    def __init__(self, in_feats, hidden_feats, out_feats, heads=4, dropout=0.6):
+        """
+        Multi-Omics Graph Attention Network (MOGAT) using DGL's GATConv.
+
+        Parameters:
+        - in_feats: Number of input features per node (after omics integration).
+        - hidden_feats: Hidden layer size per attention head.
+        - out_feats: Number of output classes.
+        - heads: Number of attention heads in the first GAT layer.
+        - dropout: Dropout rate.
+        """
+>>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
         super(MOGAT, self).__init__()
         self.gat1 = GATConv(in_feats, hidden_feats, num_heads=heads, feat_drop=dropout, attn_drop=dropout)
         self.gat2 = GATConv(hidden_feats * heads, hidden_feats, num_heads=1, feat_drop=dropout, attn_drop=dropout)
@@ -111,6 +152,17 @@ class MOGAT(nn.Module):
         # return logits, embeddings
         return logits
 
+<<<<<<< HEAD
+=======
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import dgl
+import dgl.function as fn
+from dgl.nn import GATConv
+
+
+>>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
 class FeatureAttention(nn.Module):
     def __init__(self, feat_dim, hidden_dim=None):
         super().__init__()
@@ -125,6 +177,10 @@ class FeatureAttention(nn.Module):
         gates = torch.sigmoid(self.net(x))
         return x * gates
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
 class MomentAggregator:
     @staticmethod
     def compute_moments(g, features, eps=1e-6):
@@ -147,6 +203,10 @@ class MomentAggregator:
 
             return neigh_mean, neigh_var, neigh_skew
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
 class DMGNN(nn.Module):
     def __init__(
         self,
