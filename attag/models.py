@@ -80,6 +80,197 @@ class ATTAG(nn.Module):
 
         return self.mlp(x)
     
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from dgl.nn import GATConv
+
+class MOGAT(nn.Module):
+    def __init__(self, in_feats, hidden_feats, out_feats, heads=4, dropout=0.6):
+        """
+        Multi-Omics Graph Attention Network (MOGAT) using DGL's GATConv.
+
+        Parameters:
+        - in_feats: Number of input features per node (after omics integration).
+        - hidden_feats: Hidden layer size per attention head.
+        - out_feats: Number of output classes.
+        - heads: Number of attention heads in the first GAT layer.
+        - dropout: Dropout rate.
+        """
+        super(MOGAT, self).__init__()
+        self.gat1 = GATConv(in_feats, hidden_feats, num_heads=heads, feat_drop=dropout, attn_drop=dropout)
+        self.gat2 = GATConv(hidden_feats * heads, hidden_feats, num_heads=1, feat_drop=dropout, attn_drop=dropout)
+
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_feats, hidden_feats),
+            nn.ReLU(),
+            nn.Linear(hidden_feats, out_feats)
+        )
+
+    def forward(self, g, features):
+        """
+        Forward pass for MOGAT.
+
+        Parameters:
+        - g: DGLGraph on the same device as the model.
+        - features: Node features tensor.
+
+        Returns:
+        - logits: Raw output scores [num_nodes, out_feats]
+        - embeddings: Node embeddings from the last GAT layer.
+        """
+        # First GAT layer (multi-head)
+        x = self.gat1(g, features)   # Shape: [N, heads, hidden_feats]
+        x = x.flatten(1)             # Merge heads → shape: [N, hidden_feats * heads]
+        x = F.elu(x)
+        x = F.dropout(x, p=0.6, training=self.training)
+
+        # Second GAT layer (single head)
+        x = self.gat2(g, x)          # Shape: [N, 1, hidden_feats]
+        x = x.squeeze(1)             # → shape: [N, hidden_feats]
+        x = F.elu(x)
+
+        embeddings = x               # Store embeddings before classification
+        logits = self.mlp(x)         # Final classification
+
+        # return logits, embeddings
+        return logits
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import dgl
+import dgl.function as fn
+from dgl.nn import GATConv
+
+
+class FeatureAttention(nn.Module):
+    def __init__(self, feat_dim, hidden_dim=None):
+        super().__init__()
+        hidden_dim = hidden_dim or max(16, feat_dim // 4)
+        self.net = nn.Sequential(
+            nn.Linear(feat_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, feat_dim)
+        )
+
+    def forward(self, x):
+        gates = torch.sigmoid(self.net(x))
+        return x * gates
+
+
+class MomentAggregator:
+    @staticmethod
+    def compute_moments(g, features, eps=1e-6):
+        with g.local_scope():
+            g.ndata['h'] = features
+            g.update_all(fn.copy_u('h', 'm'), fn.mean('m', 'neigh_mean'))
+            neigh_mean = g.ndata.get('neigh_mean', torch.zeros_like(features))
+
+            g.ndata['h2'] = features * features
+            g.update_all(fn.copy_u('h2', 'm2'), fn.mean('m2', 'neigh_m2'))
+            neigh_m2 = g.ndata.get('neigh_m2', torch.zeros_like(features))
+            neigh_var = torch.clamp(neigh_m2 - neigh_mean * neigh_mean, min=0.0)
+
+            g.ndata['h3'] = features * features * features
+            g.update_all(fn.copy_u('h3', 'm3'), fn.mean('m3', 'neigh_m3'))
+            neigh_m3 = g.ndata.get('neigh_m3', torch.zeros_like(features))
+            neigh_skew = neigh_m3 - 3 * neigh_mean * neigh_m2 + 2 * neigh_mean.pow(3)
+            denom = (neigh_var + eps).pow(1.5)
+            neigh_skew = neigh_skew / (denom + eps)
+
+            return neigh_mean, neigh_var, neigh_skew
+
+
+class DMGNN(nn.Module):
+    def __init__(
+        self,
+        in_feat_dim,
+        hidden_dim,
+        out_dim,
+        heads=4,
+        dropout=0.5,
+        use_moments=('mean', 'var', 'skew'),
+        use_feature_attn=True,
+        remote_emb_dim=0
+    ):
+        super().__init__()
+        self.use_moments = use_moments
+        self.use_feature_attn = use_feature_attn
+        self.remote_emb_dim = remote_emb_dim
+        self.dropout = dropout
+        self.hidden_dim = hidden_dim
+        self.heads = heads
+
+        if use_feature_attn:
+            self.feat_attn = FeatureAttention(in_feat_dim)
+
+        moment_channels = 0
+        if 'mean' in use_moments: moment_channels += 1
+        if 'var' in use_moments: moment_channels += 1
+        if 'skew' in use_moments: moment_channels += 1
+
+        total_input = in_feat_dim * (1 + moment_channels) + remote_emb_dim
+
+        self.moment_proj = nn.Sequential(
+            nn.Linear(total_input, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout)
+        )
+
+        self.gat1 = GATConv(hidden_dim, hidden_dim // heads, num_heads=heads,
+                            feat_drop=dropout, attn_drop=dropout)
+        self.gat2 = GATConv(hidden_dim, hidden_dim, num_heads=1,
+                            feat_drop=dropout, attn_drop=dropout)
+
+        self.res_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.agg_mlp = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout)
+        )
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, out_dim)
+        )
+
+    def mix_moment_embed(self, g, features):
+        neigh_mean, neigh_var, neigh_skew = MomentAggregator.compute_moments(g, features)
+        parts = [features]
+        if 'mean' in self.use_moments: parts.append(neigh_mean)
+        if 'var' in self.use_moments: parts.append(neigh_var)
+        if 'skew' in self.use_moments: parts.append(neigh_skew)
+        return torch.cat(parts, dim=1)
+
+    def forward(self, g, features, remote_emb=None):
+        if self.use_feature_attn:
+            features = self.feat_attn(features)
+
+        mixed = self.mix_moment_embed(g, features)
+
+        if remote_emb is not None and self.remote_emb_dim > 0:
+            mixed = torch.cat([mixed, remote_emb], dim=1)
+
+        h = self.moment_proj(mixed)
+
+        x = self.gat1(g, h)
+        x = x.view(x.shape[0], -1)
+        x = F.elu(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        x2 = self.gat2(g, x).squeeze(1)
+        x2 = F.elu(x2)
+
+        if x.shape[1] != x2.shape[1]:
+            x = self.res_proj(x)
+        agg = self.agg_mlp(torch.cat([x, x2], dim=1))
+
+        logits = self.classifier(agg)
+        return logits  # ready for BCEWithLogitsLoss
+
 class HGDC(torch.nn.Module):
     def __init__(self, args, weights=[0.95, 0.90, 0.15, 0.10]):
         super().__init__()

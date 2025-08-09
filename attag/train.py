@@ -1,3 +1,5 @@
+
+## python attag/train.py --model_type ATTAG --net_type ppnet --score_threshold 0.99 --learning_rate 0.001 --num_epochs 305
 ## python _gene_label_prediction_tsne_pertag.py --model_type ATTAG --net_type pathnet --score_threshold 0.4 --learning_rate 0.001 --num_epochs 65 
 ## (kg39) ericsali@erics-MBP-4 gnn_pathways % python _gene_label_prediction_tsne_sage.py --model_type EMOGI --net_type ppnet --score_threshold 0.5 --learning_rate 0.001 --num_epochs 100 
 ## (kg39) ericsali@erics-MBP-4 gnn_pathways % python _gene_label_prediction_tsne_pertag.py --model_type ATTAG --net_type ppnet --score_threshold 0.9 --learning_rate 0.001 --num_epochs 201
@@ -29,7 +31,7 @@ from torch_geometric.utils import dropout_edge, negative_sampling, remove_self_l
 from matplotlib.lines import Line2D
 from scipy.stats import ttest_ind
 import numpy as np
-from models import ATTAG, HGDC, EMOGI, MTGCN, GCN, GAT, GraphSAGE, GIN, Chebnet, FocalLoss
+from models import ATTAG, MOGAT, DMGNN, HGDC, EMOGI, MTGCN, GCN, GAT, GraphSAGE, GIN, Chebnet, FocalLoss
 from utils import (choose_model, plot_roc_curve, plot_pr_curve, load_graph_data, 
                        load_oncokb_genes, plot_and_analyze, save_and_plot_results)
 
@@ -37,7 +39,7 @@ from utils import (choose_model, plot_roc_curve, plot_pr_curve, load_graph_data,
 def train(args):
     # Load data
     ##data_path = os.path.join('data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_32x4.json')
-    data_path = os.path.join('data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_128x1.json')
+    data_path = os.path.join('../gat/data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_128x1.json')
     print('data_path=============================', data_path)
     nodes, edges, embeddings, labels = load_graph_data(data_path)
     graph = dgl.graph(edges)
@@ -72,6 +74,9 @@ def train(args):
     for epoch in tqdm(range(args.num_epochs), desc="Training Progress", unit="epoch"):
         model.train()
         logits = model(graph, features).squeeze()
+        # logits, _ = model(graph, features)
+        # logits = logits.squeeze()
+
         loss = loss_fn(logits[train_mask], labels[train_mask])
         
         optimizer.zero_grad()
@@ -409,6 +414,7 @@ def train(args):
 
     # Define models and networks
     models = ["ATTAG", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GraphSAGE", "GIN"]
+    ## models = ["ATTAG", "MOGAT", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GraphSAGE", "GIN"]
     networks = ["Protein Network", "Pathway Network", "Gene Network"]
 
     # AUPRC values for ONGene and OncoKB for each model (rows: models, cols: networks)
@@ -499,7 +505,7 @@ if __name__ == "__main__":
     parser.add_argument('--out_feats', type=int, default=1, help="Number of out features in GNN layers")
     parser.add_argument('--learning_rate', type=float, default=0.001, help="Learning rate for optimizer")
     parser.add_argument('--num_epochs', type=int, default=100, help="Number of training epochs")
-    parser.add_argument('--model_type', type=str, choices=['GraphSAGE', 'GAT', 'HGDC', 'EMOGI', 'MTGCN', 'GCN', 'GIN', 'Chebnet', 'ATTAG'], required=True, help="Type of GNN model to use")
+    parser.add_argument('--model_type', type=str, choices=['GraphSAGE', 'GAT', 'HGDC', 'EMOGI', 'MTGCN', 'GCN', 'GIN', 'Chebnet', 'MOGAT', 'DMGNN', 'ATTAG'], required=True, help="Type of GNN model to use")
     parser.add_argument('--net_type', type=str, choices=['pathnet', 'ppnet', 'ggnet'], required=True, help="Type of gene net to use")
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help="Device to run the model on")
     parser.add_argument('--score_threshold', type=float, default=0.85, help="Score threshold for identifying predicted driver genes")

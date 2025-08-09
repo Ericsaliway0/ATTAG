@@ -18,7 +18,7 @@ from sklearn.metrics import roc_curve, auc, precision_recall_curve
 from scipy.stats import ttest_ind
 import numpy as np
 from torch_geometric.nn import GCNConv
-from models import ATTAG, HGDC, EMOGI, MTGCN, GCN, GAT, GraphSAGE, GIN, Chebnet, FocalLoss
+from models import ATTAG, MOGAT, DMGNN, HGDC, EMOGI, MTGCN, GCN, GAT, GraphSAGE, GIN, Chebnet, FocalLoss
 import pandas as pd
 import torch.nn as nn
 
@@ -26,8 +26,6 @@ def choose_model(model_type, in_feats, hidden_feats, out_feats):
     if model_type == 'GraphSAGE':
         return GraphSAGE(in_feats, hidden_feats, out_feats)
     elif model_type == 'GAT':
-        return GAT(in_feats, hidden_feats, out_feats, num_heads=1)
-    elif model_type == 'HGDC':
         return GAT(in_feats, hidden_feats, out_feats, num_heads=1)
     elif model_type == 'HGDC':
         return GAT(in_feats, hidden_feats, out_feats, num_heads=1)
@@ -41,10 +39,23 @@ def choose_model(model_type, in_feats, hidden_feats, out_feats):
         return GIN(in_feats, hidden_feats, out_feats)
     elif model_type == 'Chebnet':
         return Chebnet(in_feats, hidden_feats, out_feats)
+    elif model_type == 'MOGAT':
+        return MOGAT(in_feats, hidden_feats, out_feats)
     elif model_type == 'ATTAG':
         return ATTAG(in_feats, hidden_feats, out_feats)
+    elif model_type == 'DMGNN':
+        return DMGNN(
+            in_feat_dim=in_feats,
+            hidden_dim=hidden_feats,
+            out_dim=out_feats,
+            heads=4,
+            dropout=0.5
+        )
     else:
-        raise ValueError("Invalid model type. Choose from ['GraphSAGE', 'GAT', 'EMOGI', 'GCN', 'GIN', 'Chebnet', 'ATTAG'].")
+        raise ValueError(
+            "Invalid model type. Choose from ['GraphSAGE', 'GAT', 'HGDC', 'EMOGI', "
+            "'MTGCN', 'GCN', 'GIN', 'Chebnet', 'MOGAT', 'ATTAG', 'DMGNN']."
+        )
 
 def save_and_plot_results_no_error_bar_pass(predicted_above, predicted_below, degrees_above, degrees_below, avg_above, avg_below, args):
 
