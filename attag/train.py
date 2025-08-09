@@ -39,12 +39,8 @@ from utils import (choose_model, plot_roc_curve, plot_pr_curve, load_graph_data,
 def train(args):
     # Load data
     ##data_path = os.path.join('data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_32x4.json')
-<<<<<<< HEAD
     ##data_path = os.path.join('../gat/data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_128x1.json')
     data_path = os.path.join('../gat/data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_32x4.json')
-=======
-    data_path = os.path.join('../gat/data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_128x1.json')
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     print('data_path=============================', data_path)
     nodes, edges, embeddings, labels = load_graph_data(data_path)
     graph = dgl.graph(edges)
@@ -148,20 +144,13 @@ def train(args):
     # Save predictions to a CSV file
     output_dir = 'results/gene_prediction/'
     os.makedirs(output_dir, exist_ok=True)
-<<<<<<< HEAD
     predicted_genes_csv_path = os.path.join(output_dir, f'{args.net_type}_{args.model_type}_predicted_driver_genes_with_confirmed_sources_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
-=======
-    predicted_genes_csv_path = os.path.join(output_dir, f'{args.net_type}_{args.model_type}_predicted_driver_genes_with_confirmed_sources_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.csv')
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
+
     df_predictions = pd.DataFrame(predicted_genes, columns=["Gene", "Score", "Confirmed Sources"])
     df_predictions.to_csv(predicted_genes_csv_path, index=False)
 
     print(f"Predicted driver genes with confirmed sources saved to {predicted_genes_csv_path}")
-<<<<<<< HEAD
     confirmed_predictions_csv_path = os.path.join(output_dir, f'{args.net_type}_{args.model_type}_confirmed_predicted_genes_with_sources_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
-=======
-    confirmed_predictions_csv_path = os.path.join(output_dir, f'{args.net_type}_{args.model_type}_confirmed_predicted_genes_with_sources_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.csv')
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     df_confirmed = pd.DataFrame(confirmed_predictions, columns=["Gene", "Score", "Source"])
     df_confirmed.to_csv(confirmed_predictions_csv_path, index=False)
 
@@ -175,11 +164,7 @@ def train(args):
     predicted_driver_genes = [node_names[i] for i in non_labeled_nodes if node_names[i] in known_drivers]
 
     # Save the predicted known cancer driver genes to a CSV file
-<<<<<<< HEAD
     predicted_drivers_csv_path = os.path.join(output_dir, f'{args.net_type}_{args.model_type}_predicted_known_drivers_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
-=======
-    predicted_drivers_csv_path = os.path.join(output_dir, f'{args.net_type}_{args.model_type}_predicted_known_drivers_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.csv')
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     df = pd.DataFrame(predicted_driver_genes, columns=["Gene"])
     df.to_csv(predicted_drivers_csv_path, index=False)
     print(f"Predicted known driver genes saved to {predicted_drivers_csv_path}")
@@ -204,19 +189,11 @@ def train(args):
     ground_truth_driver_names = {node_names[i] for i in ground_truth_driver_indices}
     output_file_above = os.path.join(
         'results/gene_prediction/',
-<<<<<<< HEAD
         f'{args.net_type}_{args.model_type}_predicted_driver_genes_above_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
     )
     output_file_below = os.path.join(
         'results/gene_prediction/',
         f'{args.net_type}_{args.model_type}_predicted_driver_genes_below_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
-=======
-        f'{args.net_type}_{args.model_type}_predicted_driver_genes_above_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.csv'
-    )
-    output_file_below = os.path.join(
-        'results/gene_prediction/',
-        f'{args.net_type}_{args.model_type}_predicted_driver_genes_below_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.csv'
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     )
 
     with open(output_file_above, 'w', newline='') as csvfile:
@@ -249,11 +226,7 @@ def train(args):
     # Save degrees of predicted driver genes connecting to ground truth driver genes (above threshold)
     degree_output_file_above = os.path.join(
         'results/gene_prediction/',
-<<<<<<< HEAD
         f'{args.net_type}_{args.model_type}_predicted_driver_gene_degrees_above_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
-=======
-        f'{args.net_type}_{args.model_type}_predicted_driver_gene_degrees_above_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.csv'
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     )
     with open(degree_output_file_above, 'w', newline='') as csvfile:
         csvwriter = csv.writer(csvfile)
@@ -266,11 +239,7 @@ def train(args):
     # Save degrees of nodes with scores below the threshold (connecting only to label 1 nodes)
     degree_output_file_below = os.path.join(
         'results/gene_prediction/',
-<<<<<<< HEAD
         f'{args.net_type}_{args.model_type}_predicted_driver_gene_degrees_below_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
-=======
-        f'{args.net_type}_{args.model_type}_predicted_driver_gene_degrees_below_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.csv'
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     )
     with open(degree_output_file_below, 'w', newline='') as csvfile:
         csvwriter = csv.writer(csvfile)
@@ -353,11 +322,7 @@ def train(args):
     # Save the plot
     output_plot_path = os.path.join(
         'results/gene_prediction/',
-<<<<<<< HEAD
         f'{args.net_type}_{args.model_type}_degree_distributions_threshold{args.score_threshold}_epo{args.num_epochs}.png'
-=======
-        f'{args.net_type}_{args.model_type}_degree_distributions_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.png'
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     )
     plt.savefig(output_plot_path, bbox_inches='tight')
 
@@ -419,11 +384,7 @@ def train(args):
     # Save the KDE plot
     kde_output_path = os.path.join(
         'results/gene_prediction/',
-<<<<<<< HEAD
         f'{args.net_type}_{args.model_type}_kde_plot_threshold{args.score_threshold}_epo{args.num_epochs}.png'
-=======
-        f'{args.net_type}_{args.model_type}_kde_plot_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.png'
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     )
     plt.savefig(kde_output_path, bbox_inches='tight')
     print(f"KDE plot saved to {kde_output_path}")
@@ -435,13 +396,8 @@ def train(args):
     labeled_scores = scores[train_mask.cpu().numpy()] if isinstance(scores, torch.Tensor) else scores[train_mask.cpu().numpy()]
     labeled_labels = labels[train_mask.cpu().numpy()] if isinstance(labels, torch.Tensor) else labels[train_mask.cpu().numpy()]
 
-<<<<<<< HEAD
     output_file_roc = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_threshold{args.score_threshold}_epo{args.num_epochs}_roc_curves.png')
     output_file_pr = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_threshold{args.score_threshold}_epo{args.num_epochs}_pr_curves.png')
-=======
-    output_file_roc = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_threshold{args.score_threshold}_epo{args.num_epochs}_128x1_roc_curves.png')
-    output_file_pr = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_threshold{args.score_threshold}_epo{args.num_epochs}_128x1_pr_curves.png')
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
 
     # Convert labeled_labels and labeled_scores to NumPy arrays if they are PyTorch tensors
     if isinstance(labeled_scores, torch.Tensor):
@@ -533,12 +489,7 @@ def train(args):
     ##plt.title("Comparison of Models and Networks", fontsize=14)
 
     comp_output_path = os.path.join(
-        'results/gene_prediction/',
-<<<<<<< HEAD
         f'{args.net_type}_{args.model_type}_comp_plot_threshold{args.score_threshold}_epo{args.num_epochs}.png'
-=======
-        f'{args.net_type}_{args.model_type}_comp_plot_threshold{args.score_threshold}_epo{args.num_epochs}_128x1.png'
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48
     )
     plt.savefig(comp_output_path, bbox_inches='tight')
     print(f"KDE plot saved to {kde_output_path}")
