@@ -1,0 +1,56 @@
+\documentclass[onecolumn]{IEEEtran}
+\IEEEoverridecommandlockouts
+\PassOptionsToPackage{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}{hyperref}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts,bm}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{algorithm,algpseudocode}
+\usepackage{multirow,booktabs,array,longtable}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usepackage{stfloats}
+\usepackage{placeins}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\renewcommand{\thefigure}{\arabic{figure}}
+\renewcommand{\thetable}{\arabic{table}}
+
+\tikzset{
+	node/.style={circle, draw, fill=blue!20, minimum size=0.4cm},
+	edge/.style={thick,->,>=stealth}
+}
+
+\newcommand{\comm}[1]{}
+\renewcommand{\baselinestretch}{1.15} % tighter spacing for single page
+
+\def\E{\mathcal{E}}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+		T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\newtheorem{definition}{Definition}
+
+\begin{document}
+	\bstctlcite{IEEEexample:BSTcontrol}
+	
+	\title{Integration of Multi-Omics Data with a Topology-Adaptive Graph Convolutional Network for Cancer Driver Gene Identification}
+	
+	\author{
+		\IEEEauthorblockN{
+			Sa Li\thanks{Corresponding author: \href{mailto:sa@oakland.edu}{sa@oakland.edu}},
+			Jonah Shader,
+			Abhijeet Bhattacharya,
+			Tianle Ma}
+		\IEEEauthorblockA{Oakland University, Rochester, MI, USA \\ 
+			\{sa, jonahshader, bhattacharya, tianlema\}@oakland.edu}
+	}
+	
+	\maketitle
+	
+	\section*{Acknowledgements}
+	This work was supported in part by research funding from Oakland University. The authors thank the Bioinformatics and Systems Biology group for insightful discussions.
+	
+\end{document}

@@ -35,6 +35,1121 @@ from models import ATTAG, MOGAT, DMGNN, HGDC, EMOGI, MTGCN, GCN, GAT, GraphSAGE,
 from utils import (choose_model, plot_roc_curve, plot_pr_curve, load_graph_data, 
                        load_oncokb_genes, plot_and_analyze, save_and_plot_results)
 
+def train_oncokb(args):
+# def main_ongene_pass(args):
+    # Load data
+    ##data_path = os.path.join('gat/data/', f'{args.net_type}_updated_gene_embeddings.json')
+    data_path = os.path.join('../gat/data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_32x4.json')
+    ##data_path = os.path.join('gat/data/', f'{args.net_type}_combined_gene_embeddings_32_64_label_0_1_2_3_bidirection.json')
+    nodes, edges, embeddings, labels = load_graph_data(data_path)
+
+    # Load oncokb gene list
+    oncokb_path = 'data/oncokb_1172.txt'
+    oncokb_genes = load_oncokb_genes(oncokb_path)
+
+    # Filtering Nodes
+    filtered_nodes = []
+    filtered_embeddings = []
+    filtered_labels = []
+    test_mask = []
+
+    for i, node in enumerate(nodes):
+        if node in oncokb_genes:
+            if labels[i] == -1:  # Only update label if it's currently unlabeled
+                filtered_embeddings.append(embeddings[i].tolist())  # Convert embedding to list
+                filtered_labels.append(1)  # Label these genes as 1
+                test_mask.append(True)
+            else:
+                filtered_embeddings.append(embeddings[i].tolist())
+                filtered_labels.append(labels[i])
+                test_mask.append(True)  # Include labeled overlapping nodes
+        else:
+            filtered_embeddings.append(embeddings[i].tolist())
+            filtered_labels.append(labels[i])
+            test_mask.append((labels[i] == 1) or (labels[i] == -1))  # Include specific labels
+
+    # Ensure all arrays match the number of nodes
+    if len(filtered_embeddings) != len(nodes) or len(filtered_labels) != len(nodes) or len(test_mask) != len(nodes):
+        raise ValueError(f"Mismatch in node-related lists: "
+                        f"Embeddings: {len(filtered_embeddings)}, Labels: {len(filtered_labels)}, Test Mask: {len(test_mask)}, Nodes: {len(nodes)}")
+
+    # Convert filtered data to tensors
+    filtered_embeddings = torch.tensor(filtered_embeddings, dtype=torch.float32)
+    filtered_labels = torch.tensor(filtered_labels, dtype=torch.float32)  # Float for BCE loss
+    test_mask = torch.tensor(test_mask, dtype=torch.bool)
+
+
+    # Create DGL graph
+    graph = dgl.graph(edges)
+    ##graph.ndata['feat'] = embeddings
+    ##graph.ndata['label'] = labels
+    # Assign data to graph
+    graph.ndata['feat'] = filtered_embeddings
+    graph.ndata['label'] = filtered_labels
+    graph.ndata['test_mask'] = test_mask
+    
+    graph.ndata['train_mask'] = labels != -1  # Mask for labeled nodes
+    ##graph.ndata['test_mask'] = test_mask  # Updated test mask
+    ##graph.ndata['test_mask'] = (labels == 1) | (labels == -1)
+
+
+    # Add self-loops to avoid 0-in-degree nodes error
+    graph = dgl.add_self_loop(graph)
+
+    # Hyperparameters
+    in_feats = embeddings.shape[1]
+    hidden_feats = args.hidden_feats
+    out_feats = 1  # Binary classification (driver gene or not)
+
+    # Model, loss, optimizer
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = choose_model(args.model_type, in_feats, hidden_feats, out_feats).to(device)
+    loss_fn = nn.BCEWithLogitsLoss()
+    ##loss_fn = FocalLoss(alpha=0.25, gamma=2) 
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    # Move data to device
+    graph = graph.to(device)
+    features = graph.ndata['feat'].to(device)
+    labels = graph.ndata['label'].to(device).float()  
+    train_mask = graph.ndata['train_mask'].to(device)
+    test_mask = graph.ndata['test_mask'].to(device)
+
+    # Training loop
+    for epoch in range(args.num_epochs):
+        model.train()
+        logits = model(graph, features).squeeze()
+        loss = loss_fn(logits[train_mask], labels[train_mask])
+        
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        print(f"Epoch {epoch + 1}/{args.num_epochs}, Loss: {loss.item():.4f}")
+
+    # Testing and predictions
+    model.eval()
+    with torch.no_grad():
+        logits = model(graph, features).squeeze()
+        scores = torch.sigmoid(logits).cpu().numpy()  # Convert logits to probabilities
+        print("Predicted Scores:", scores[test_mask.cpu().numpy()])
+
+    # Rank nodes by scores for only non-labeled nodes
+    node_names = list(nodes.keys())
+    non_labeled_nodes = [i for i, label in enumerate(labels) if label == -1]  # Indices of non-labeled nodes
+    non_labeled_scores = [(node_names[i], scores[i]) for i in non_labeled_nodes]
+
+    # Sort by score
+    ranking = sorted(non_labeled_scores, key=lambda x: x[1], reverse=True)
+    output_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_oncokb_1172_all_predicted_driver_genes_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
+
+    with open(output_file, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(ranking)  # Write the ranked predictions
+
+    print(f"All ranked predictions (score >= {args.score_threshold}) saved to {output_file}")
+        
+    # Filter predictions based on the score threshold
+    predicted_genes_above_threshold = [
+        (node_name, score)
+        for node_name, score in non_labeled_scores
+        if score >= args.score_threshold
+    ]
+
+    # Rank the filtered predictions
+    ranking = sorted(predicted_genes_above_threshold, key=lambda x: x[1], reverse=True)
+
+    # Save the ranked predictions to CSV
+    output_file = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_oncokb_1172_predicted_driver_genes_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    with open(output_file, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(ranking)  # Write the ranked predictions
+
+    print(f"Ranked predictions (score >= {args.score_threshold}) saved to {output_file}")
+
+    # Calculate statistics
+    non_labeled_nodes_count = len(non_labeled_nodes)
+    ground_truth_driver_nodes = [i for i, label in enumerate(labels) if label == 1]
+    ground_truth_non_driver_nodes = [i for i, label in enumerate(labels) if label == 0]
+    
+
+    # Save both above and below threshold scores, sorted by scores in descending order
+    predicted_driver_nodes_above_threshold = sorted(
+        [(node_names[i], scores[i]) for i in non_labeled_nodes if scores[i] >= args.score_threshold],
+        key=lambda x: x[1],
+        reverse=True
+    )
+    predicted_driver_nodes_below_threshold = sorted(
+        [(node_names[i], scores[i]) for i in non_labeled_nodes if scores[i] < args.score_threshold],
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    from collections import defaultdict
+    import statistics
+
+    # Get the ground truth driver gene indices and names
+    ground_truth_driver_indices = [i for i, label in enumerate(labels) if label == 1]
+    ground_truth_driver_names = {node_names[i] for i in ground_truth_driver_indices}
+
+    # Save predictions (above and below threshold) to CSV
+    output_file_above = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_oncokb_1172_predicted_driver_genes_above_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    output_file_below = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_oncokb_1172_predicted_driver_genes_below_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+
+    with open(output_file_above, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(predicted_driver_nodes_above_threshold)
+
+    with open(output_file_below, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(predicted_driver_nodes_below_threshold)
+
+    print(f"Predicted driver genes (above threshold) saved to {output_file_above}")
+
+    # Calculate degrees for nodes above and below the threshold (connecting only to label 1 nodes)
+    degree_counts_above = defaultdict(int)
+    degree_counts_below = defaultdict(int)
+
+    for src, dst in edges:
+        src_name = node_names[src]
+        dst_name = node_names[dst]
+
+        # Count only connections to ground truth driver genes (label 1 nodes)
+        if dst_name in ground_truth_driver_names:
+            if src_name in [gene for gene, _ in predicted_driver_nodes_above_threshold]:
+                degree_counts_above[src_name] += 1
+            elif src_name in [gene for gene, _ in predicted_driver_nodes_below_threshold]:
+                degree_counts_below[src_name] += 1
+
+    # Sort degrees by degree count in descending order
+    sorted_degree_counts_above = sorted(degree_counts_above.items(), key=lambda x: x[1], reverse=True)
+    sorted_degree_counts_below = sorted(degree_counts_below.items(), key=lambda x: x[1], reverse=True)
+
+    # Save degrees of predicted driver genes connecting to ground truth driver genes (above threshold)
+    degree_output_file_above = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_oncokb_1172_predicted_driver_gene_degrees_above_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    with open(degree_output_file_above, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Predicted Driver Gene', 'Degree'])  # Header row
+        csvwriter.writerows(sorted_degree_counts_above)
+        ##csvwriter.writerow(['Average Degree', average_degree_above])  # Save average degree
+
+    print(f"Degrees of predicted driver genes (above threshold) saved to {degree_output_file_above}")
+
+    # Save degrees of nodes with scores below the threshold (connecting only to label 1 nodes)
+    degree_output_file_below = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_oncokb_1172_predicted_driver_gene_degrees_below_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    with open(degree_output_file_below, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Node', 'Degree'])  # Header row
+        csvwriter.writerows(sorted_degree_counts_below)
+        ##csvwriter.writerow(['Average Degree', average_degree_below])  # Save average degree
+
+    print(f"Degrees of nodes with scores below threshold saved to {degree_output_file_below}")
+    ##print(f"sorted_degree_counts_below: {sorted_degree_counts_below}")
+
+    # Prepare DataFrame for nodes with degrees
+    nodes_with_degrees = []
+
+    # Above threshold
+    for gene, degree in degree_counts_above.items():
+        nodes_with_degrees.append({'Gene_Set': 'Above Threshold', 'Degree': degree})
+
+    # Below threshold
+    for gene, degree in degree_counts_below.items():
+        nodes_with_degrees.append({'Gene_Set': 'Below Threshold', 'Degree': degree})
+
+    # Convert to DataFrame
+    nodes_with_degrees = pd.DataFrame(nodes_with_degrees)
+
+    ##print(f"sorted_degree_counts_below: {sorted_degree_counts_below}")
+    sorted_degree_counts_above_value = [value for _, value in sorted_degree_counts_above if value <= 50]
+    sorted_degree_counts_below_value = [value for _, value in sorted_degree_counts_below if value <= 50]
+    
+    output_above_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_oncokb_1172_output_above_file_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
+    output_below_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_oncokb_1172_output_below_file_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
+
+
+    # Calculate statistics
+    non_labeled_nodes_count = len(non_labeled_nodes)
+    ground_truth_driver_nodes = [i for i, label in enumerate(labels) if label == 1]
+    ground_truth_non_driver_nodes = [i for i, label in enumerate(labels) if label == 0]
+
+    predicted_driver_nodes = [node_names[i] for i in non_labeled_nodes if scores[i] > 0.85]
+
+    # Prepare data to save to CSV
+    stats_output_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_oncokb_1172_prediction_stats_{args.num_epochs}.csv')
+    with open(stats_output_file, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Non-Labeled Nodes Count', 'Driver Genes', 'Non-Driver Genes', 'Total Testing Nodes', 'Predicted Driver Genes'])
+        csvwriter.writerow([
+            non_labeled_nodes_count,
+            len(ground_truth_driver_nodes),
+            len(ground_truth_non_driver_nodes),
+            len(ground_truth_driver_nodes) + len(ground_truth_non_driver_nodes),
+            len(predicted_driver_nodes)
+        ])
+
+    print(f"Prediction statistics saved to {stats_output_file}")
+
+
+    degree_data = [sorted_degree_counts_above_value, sorted_degree_counts_below_value]
+
+    # Create the box plot
+    plt.figure(figsize=(3, 4))
+
+    # Create the boxplot
+    boxplot = plt.boxplot(
+        degree_data,
+        vert=True,
+        patch_artist=True,  # Allows customization of box color
+        flierprops=dict(marker='o', markerfacecolor='grey', markeredgecolor='grey', markersize=5, alpha=0.2),  # Half-transparent gray dots for outliers
+        boxprops=dict(facecolor='green', color='black'),  # Color for boxes
+        medianprops=dict(color='blue', linewidth=2),  # Style for median lines
+        whiskerprops=dict(color='black', linewidth=1.5),  # Style for whiskers
+        capprops=dict(color='black', linewidth=1.5)  # Style for caps
+    )
+
+    # Customize frame
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)  # Remove the top frame line
+    ax.spines['right'].set_visible(False)  # Remove the right frame line
+
+    # Add labels and title
+    plt.xticks([1, 2], ['PCGs', 'Other'], fontsize=8)  # Category labels
+    plt.yticks(fontsize=8)
+    plt.ylabel('Interaction degrees with KCGs', fontsize=10, labelpad=10) 
+
+    # Add different bar colors for each category
+    colors = ['green', 'skyblue']
+    for patch, color in zip(boxplot['boxes'], colors):
+        patch.set_facecolor(color)
+
+    # Save the plot
+    output_plot_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_oncokb_1172_degree_distributions_threshold{args.score_threshold}_epo{args.num_epochs}.png'
+    )
+    plt.savefig(output_plot_path, bbox_inches='tight')
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+    print(f"Box plot saved to {output_plot_path}")
+
+    # Assuming args and necessary variables are defined earlier
+    # Prepare data for KDE plot
+    print("Preparing data for KDE plot...")
+    scores = torch.sigmoid(logits).cpu().numpy()  # Convert logits to probabilities
+    degrees = [
+        degree_counts_above.get(node_names[i], 0) +
+        degree_counts_below.get(node_names[i], 0)
+        for i in range(len(node_names))
+    ]
+
+    # Create DataFrame for plotting
+    plot_data = pd.DataFrame({
+        "Prob_pos_ranked": pd.Series(scores).rank(),
+        "Degree_ranked": pd.Series(degrees).rank()
+    })
+
+    # Plot KDE
+    print("Generating KDE plot...")
+    plt.figure(figsize=(4, 4))
+    kde_plot = sns.kdeplot(
+        x=plot_data["Prob_pos_ranked"],
+        y=plot_data["Degree_ranked"],
+        cmap="Reds",  # Gradient colormap
+        shade=True,
+        alpha=0.7,  # Transparency
+        levels=50,  # Contour levels
+        thresh=0.05  # Threshold to filter low-density regions
+    )
+
+    # Calculate Spearman correlation
+    correlation, p_value = scipy.stats.spearmanr(
+        plot_data["Prob_pos_ranked"],
+        plot_data["Degree_ranked"]
+    )
+
+    # Add labels and titles
+    plt.xticks(fontsize=8)  # Category labels
+    plt.yticks(fontsize=8)
+    plt.xlabel('PEGNN score rank', fontsize=10, labelpad=10)  # Adjusted label distance
+    plt.ylabel('KCG interaction rank', fontsize=12, labelpad=10)
+    plt.gca().tick_params(axis='both', labelsize=8)
+
+    # Manually add legend
+    legend_text = f"Spearman R: {correlation:.4f}\nP-value: {p_value:.3e}"
+    plt.text(
+        0.05, 0.95, legend_text,
+        fontsize=8, transform=plt.gca().transAxes,
+        verticalalignment='top', bbox=dict(facecolor='white', alpha=0.8, edgecolor='none')
+    )
+
+    # Save the KDE plot
+    kde_output_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_oncokb_1172_kde_plot_threshold{args.score_threshold}_epo{args.num_epochs}.png'
+    )
+    plt.savefig(kde_output_path, bbox_inches='tight')
+    print(f"KDE plot saved to {kde_output_path}")
+
+    # Show plot
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+    # Assuming scores and labels might be PyTorch tensors
+    labeled_scores = scores[train_mask.cpu().numpy()] if isinstance(scores, torch.Tensor) else scores[train_mask]
+    labeled_labels = labels[train_mask.cpu().numpy()] if isinstance(labels, torch.Tensor) else labels[train_mask]
+
+    output_file_roc = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_oncokb_1172_threshold{args.score_threshold}_epo{args.num_epochs}_roc_curves.png')
+    output_file_pr = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_oncokb_1172_threshold{args.score_threshold}_epo{args.num_epochs}_pr_curves.png')
+
+    # Convert labeled_labels and labeled_scores to NumPy arrays if they are PyTorch tensors
+    if isinstance(labeled_scores, torch.Tensor):
+        labeled_scores_np = labeled_scores.cpu().detach().numpy()
+    else:
+        labeled_scores_np = labeled_scores
+
+    if isinstance(labeled_labels, torch.Tensor):
+        labeled_labels_np = labeled_labels.cpu().detach().numpy()
+    else:
+        labeled_labels_np = labeled_labels
+
+    # Plot curves
+    plot_roc_curve(labeled_labels_np, labeled_scores_np, output_file_roc)
+    plot_pr_curve(labeled_labels_np, labeled_scores_np, output_file_pr)
+
+
+
+
+    # Define models and networks
+    # models = ["PERTAG", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GIN"]
+    models = ["ATTAG", "DMGNN", "MOGAT", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GIN"]
+    networks = ["Protein Network", "Pathway Network", "Gene Network"]
+
+    # AUPRC values for ONGene and OncoKB for each model (rows: models, cols: networks)
+    auprc_ongene = [
+        [0.97, 0.98, 0.99],  # ATTAG
+        [0.97, 0.98, 0.99],  # DMGNN
+        [0.97, 0.98, 0.99],  # MOGAT
+        [0.95, 0.93, 0.84],  # GAT
+        [0.92, 0.89, 0.92],  # HGDC
+        [0.95, 0.82, 0.89],  # EMOGI
+        [0.92, 0.85, 0.94],  # MTGCN
+        [0.93, 0.88, 0.87],  # GCN
+        [0.96, 0.97, 0.95],  # Chebnet
+        # [0.94, 0.92, 0.94],  # GraphSAGE
+        [0.88, 0.92, 0.93]   # GIN
+    ]
+
+    auprc_oncokb = [
+        [0.96, 0.99, 0.98],  # ATTAG
+        [0.97, 0.98, 0.99],  # DMGNN
+        [0.97, 0.98, 0.99],  # MOGAT
+        [0.96, 0.94, 0.84],  # GAT
+        [0.95, 0.90, 0.95],  # HGDC
+        [0.94, 0.91, 0.92],  # EMOGI
+        [0.93, 0.81, 0.96],  # MTGCN
+        [0.91, 0.83, 0.85],  # GCN
+        [0.95, 0.99, 0.97],  # Chebnet
+        # [0.95, 0.95, 0.96],  # GraphSAGE
+        [0.88, 0.94, 0.89]   # GIN
+    ]
+
+    # Compute averages for each model
+    average_ongene = np.mean(auprc_ongene, axis=1)
+    average_oncokb = np.mean(auprc_oncokb, axis=1)
+
+    # Define colors for models and unique shapes for networks
+    # colors = ['red', 'grey', 'blue', 'green', 'purple', 'orange', 'cyan', 'brown', 'pink']
+    colors = ['red', 'yellow', 'magenta', 'grey', 'blue', 'green', 'purple', 'orange', 'cyan', 'pink']
+    network_markers = ['P', '^', 's']  # One shape for each network
+    ##markers = ['o', 's', 'D', '^', 'P', '*']
+    average_marker = 'o'
+
+    # Plotting
+    plt.figure(figsize=(8, 7))
+
+    # Plot individual points for each model and network
+    for i, model in enumerate(models):
+        for j, network in enumerate(networks):
+            plt.scatter(auprc_ongene[i][j], auprc_oncokb[i][j], color=colors[i], 
+                        marker=network_markers[j], s=90, alpha=0.6)
+
+    # Add average points for each model
+    for i, model in enumerate(models):
+        plt.scatter(average_ongene[i], average_oncokb[i], color=colors[i], marker=average_marker, 
+                    s=240, edgecolor='none', alpha=0.5)
+
+    # Create legends for models (colors) and networks (shapes)
+    model_legend = [Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[i], 
+                            markersize=14, label=models[i], alpha=0.5) for i in range(len(models))]
+    network_legend = [Line2D([0], [0], marker=network_markers[i], color='k', linestyle='None', 
+                            markersize=8, label=networks[i]) for i in range(len(networks))]
+
+    # Add network legend (bottom-right, unique shapes)
+    network_legend_artist = plt.legend(handles=network_legend, loc='lower right', title="Networks", fontsize=12, title_fontsize=14, frameon=True)
+    plt.gca().add_artist(network_legend_artist)
+
+    # Add model legend (top-left, colors)
+    ##plt.legend(handles=model_legend, loc='upper left', title=" ", fontsize=10, title_fontsize=12, frameon=True)
+    plt.legend(handles=model_legend, loc='upper left', fontsize=12, frameon=True)
+
+
+    # Labels and title
+    plt.xlabel("AUPRC for ONGene", fontsize=14)
+    plt.ylabel("AUPRC for OncoKB", fontsize=14)
+    ##plt.title("Comparison of Models and Networks", fontsize=14)
+
+    comp_output_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_comp_plot_threshold{args.score_threshold}_epo{args.num_epochs}.png'
+    )
+    plt.savefig(comp_output_path, bbox_inches='tight')
+    print(f"KDE plot saved to {kde_output_path}")
+    # Adjust layout and show plot
+    plt.tight_layout()
+    plt.show()
+
+def train_ongene(args):
+    # Load data
+    ##data_path = os.path.join('gat/data/', f'{args.net_type}_updated_gene_embeddings.json')
+    data_path = os.path.join('../gat/data/', f'{args.net_type}_omics_filtered_combined_gene_embeddings_32x4.json')
+    ##data_path = os.path.join('gat/data/', f'{args.net_type}_combined_gene_embeddings_32_64_label_0_1_2_3_bidirection.json')
+    nodes, edges, embeddings, labels = load_graph_data(data_path)
+
+    # Load oncokb gene list
+    # oncokb_path = '__embedding_pathway_gcn_gene_omics_gpu/data/ongene_803.txt'
+    oncokb_path = 'data/ongene_803.txt'
+    oncokb_genes = load_oncokb_genes(oncokb_path)
+
+    # Filtering Nodes
+    filtered_nodes = []
+    filtered_embeddings = []
+    filtered_labels = []
+    test_mask = []
+
+    for i, node in enumerate(nodes):
+        if node in oncokb_genes:
+            if labels[i] == -1:  # Only update label if it's currently unlabeled
+                filtered_embeddings.append(embeddings[i].tolist())  # Convert embedding to list
+                filtered_labels.append(1)  # Label these genes as 1
+                test_mask.append(True)
+            else:
+                filtered_embeddings.append(embeddings[i].tolist())
+                filtered_labels.append(labels[i])
+                test_mask.append(True)  # Include labeled overlapping nodes
+        else:
+            filtered_embeddings.append(embeddings[i].tolist())
+            filtered_labels.append(labels[i])
+            test_mask.append((labels[i] == 1) or (labels[i] == -1))  # Include specific labels
+
+    # Ensure all arrays match the number of nodes
+    if len(filtered_embeddings) != len(nodes) or len(filtered_labels) != len(nodes) or len(test_mask) != len(nodes):
+        raise ValueError(f"Mismatch in node-related lists: "
+                        f"Embeddings: {len(filtered_embeddings)}, Labels: {len(filtered_labels)}, Test Mask: {len(test_mask)}, Nodes: {len(nodes)}")
+
+    # Convert filtered data to tensors
+    filtered_embeddings = torch.tensor(filtered_embeddings, dtype=torch.float32)
+    filtered_labels = torch.tensor(filtered_labels, dtype=torch.float32)  # Float for BCE loss
+    test_mask = torch.tensor(test_mask, dtype=torch.bool)
+
+
+    # Create DGL graph
+    graph = dgl.graph(edges)
+    ##graph.ndata['feat'] = embeddings
+    ##graph.ndata['label'] = labels
+    # Assign data to graph
+    graph.ndata['feat'] = filtered_embeddings
+    graph.ndata['label'] = filtered_labels
+    graph.ndata['test_mask'] = test_mask
+    
+    graph.ndata['train_mask'] = labels != -1  # Mask for labeled nodes
+    ##graph.ndata['test_mask'] = test_mask  # Updated test mask
+    ##graph.ndata['test_mask'] = (labels == 1) | (labels == -1)
+
+
+    # Add self-loops to avoid 0-in-degree nodes error
+    graph = dgl.add_self_loop(graph)
+
+    # Hyperparameters
+    in_feats = embeddings.shape[1]
+    hidden_feats = args.hidden_feats
+    out_feats = 1  # Binary classification (driver gene or not)
+
+    # Model, loss, optimizer
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = choose_model(args.model_type, in_feats, hidden_feats, out_feats).to(device)
+    loss_fn = nn.BCEWithLogitsLoss()
+    ##loss_fn = FocalLoss(alpha=0.25, gamma=2) 
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    # Move data to device
+    graph = graph.to(device)
+    features = graph.ndata['feat'].to(device)
+    labels = graph.ndata['label'].to(device).float()  
+    train_mask = graph.ndata['train_mask'].to(device)
+    test_mask = graph.ndata['test_mask'].to(device)
+
+    # Training loop
+    for epoch in range(args.num_epochs):
+        model.train()
+        logits = model(graph, features).squeeze()
+        loss = loss_fn(logits[train_mask], labels[train_mask])
+        
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        print(f"Epoch {epoch + 1}/{args.num_epochs}, Loss: {loss.item():.4f}")
+
+    # Testing and predictions
+    model.eval()
+    with torch.no_grad():
+        logits = model(graph, features).squeeze()
+        scores = torch.sigmoid(logits).cpu().numpy()  # Convert logits to probabilities
+        print("Predicted Scores:", scores[test_mask.cpu().numpy()])
+
+    # Rank nodes by scores for only non-labeled nodes
+    node_names = list(nodes.keys())
+    non_labeled_nodes = [i for i, label in enumerate(labels) if label == -1]  # Indices of non-labeled nodes
+    non_labeled_scores = [(node_names[i], scores[i]) for i in non_labeled_nodes]
+
+    # Sort by score
+    ranking = sorted(non_labeled_scores, key=lambda x: x[1], reverse=True)
+    output_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_ongene_803_all_predicted_driver_genes_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
+
+    with open(output_file, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(ranking)  # Write the ranked predictions
+
+    print(f"All ranked predictions (score >= {args.score_threshold}) saved to {output_file}")
+        
+    # Filter predictions based on the score threshold
+    predicted_genes_above_threshold = [
+        (node_name, score)
+        for node_name, score in non_labeled_scores
+        if score >= args.score_threshold
+    ]
+
+    # Rank the filtered predictions
+    ranking = sorted(predicted_genes_above_threshold, key=lambda x: x[1], reverse=True)
+
+    # Save the ranked predictions to CSV
+    output_file = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_ongene_803_predicted_driver_genes_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    with open(output_file, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(ranking)  # Write the ranked predictions
+
+    print(f"Ranked predictions (score >= {args.score_threshold}) saved to {output_file}")
+
+
+    # Filter predictions with scores >= 0.99
+    high_score_genes = [
+        (node_name, score)
+        for node_name, score in non_labeled_scores
+        if score >= args.score_threshold
+    ]
+
+    # Save high-score genes and their ground truth labels
+    high_score_output_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_high_score_genes_threshold{args.score_threshold}_epo{args.num_epochs}.txt'
+    )
+
+    with open(high_score_output_path, 'w') as txtfile:
+        txtfile.write("Gene Name\tScore\tGround Truth Label\n")
+        for node_name, score in high_score_genes:
+            # Get the index of the node
+            node_index = node_names.index(node_name)
+            # Fetch the ground truth label
+            ground_truth_label = labels[node_index].item()  # Convert to Python scalar
+            # Write to file
+            txtfile.write(f"{node_name}\t{score:.6f}\t{int(ground_truth_label)}\n")
+
+    print(f"High-score genes with ground truth labels saved to {high_score_output_path}")
+
+    from scipy.stats import spearmanr
+
+    # Extract the scores and labels of the high-score genes
+    high_score_gene_indices = [
+        node_names.index(node_name) for node_name, score in high_score_genes
+        if node_name in node_names  # Ensure the node exists
+    ]
+
+    # Scores and ground truth labels for the high-score genes
+    high_score_gene_scores = [scores[idx] for idx in high_score_gene_indices]
+    high_score_gene_labels = [labels[idx].item() for idx in high_score_gene_indices]
+
+    # Calculate Spearman correlation and p-value
+    correlation, p_value = spearmanr(high_score_gene_scores, high_score_gene_labels)
+
+    # Print the results
+    print("Spearman Correlation:", correlation)
+    print("P-value:", p_value)
+
+    # Save results to a file
+    output_file = os.path.join('results/gene_prediction/', 'spearman_results.txt')
+    with open(output_file, 'w') as file:
+        file.write(f"Spearman Correlation: {correlation}\n")
+        file.write(f"P-value: {p_value}\n")
+
+    print(f"Spearman correlation and p-value saved to {output_file}")
+
+    # Save results to a text file
+    stats_output_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_p_value_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+
+    # Save results to a CSV file
+    with open(stats_output_path, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        # Write header
+        csvwriter.writerow(['Metric', 'Value'])
+        # Write data
+        csvwriter.writerow(['Spearman Correlation', correlation])
+        csvwriter.writerow(['P-value', p_value])
+
+    print(f"Spearman correlation and p-value saved to {stats_output_path}")
+
+    ################################################################################################################
+
+    # Change the label of predicted driver genes (high-score genes) to 2
+    for idx in high_score_gene_indices:
+        labels[idx] = 2  # Update the label for predicted driver genes
+
+    # Extract the scores and updated labels of the high-score genes
+    high_score_gene_scores = [scores[idx] for idx in high_score_gene_indices]
+    high_score_gene_labels = [labels[idx].item() for idx in high_score_gene_indices]
+
+    # Calculate the average scores for the two groups
+    avg_high_score = sum(high_score_gene_scores) / len(high_score_gene_scores) if high_score_gene_scores else 0
+    avg_ground_truth_label = sum(high_score_gene_labels) / len(high_score_gene_labels) if high_score_gene_labels else 0
+
+    # Calculate Spearman correlation and p-value
+    correlation, p_value = spearmanr(high_score_gene_scores, high_score_gene_labels)
+
+    # Print the results
+    print("Spearman Correlation:", correlation)
+    print("P-value:", p_value)
+    print("Average High Score:", avg_high_score)
+    print("Average Ground Truth Label:", avg_ground_truth_label)
+
+    # Define the output file path
+    output_csv_file = os.path.join('results/gene_prediction/', 'spearman_and_avg_scores_with_updated_labels.csv')
+
+    # Save results to a CSV file
+    with open(output_csv_file, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+
+        # Write header for Spearman correlation results
+        csvwriter.writerow(['Metric', 'Value'])
+        csvwriter.writerow(['Spearman Correlation', correlation])
+        csvwriter.writerow(['P-value', p_value])
+        csvwriter.writerow(['Average High Score', avg_high_score])
+        csvwriter.writerow(['Average Ground Truth Label', avg_ground_truth_label])
+
+        # Leave a blank line to separate sections
+        csvwriter.writerow([])
+
+        # Write header for the two groups
+        csvwriter.writerow(['Gene Name', 'Score', 'Updated Label'])
+
+        # Write the two groups (scores and updated labels)
+        for i, idx in enumerate(high_score_gene_indices):
+            csvwriter.writerow([node_names[idx], high_score_gene_scores[i], high_score_gene_labels[i]])
+
+    print(f"Spearman correlation, p-value, average scores, and updated labels saved to {output_csv_file}")
+
+    # Calculate statistics
+    non_labeled_nodes_count = len(non_labeled_nodes)
+    ground_truth_driver_nodes = [i for i, label in enumerate(labels) if label == 1]
+    ground_truth_non_driver_nodes = [i for i, label in enumerate(labels) if label == 0]
+    
+
+    # Save both above and below threshold scores, sorted by scores in descending order
+    predicted_driver_nodes_above_threshold = sorted(
+        [(node_names[i], scores[i]) for i in non_labeled_nodes if scores[i] >= args.score_threshold],
+        key=lambda x: x[1],
+        reverse=True
+    )
+    predicted_driver_nodes_below_threshold = sorted(
+        [(node_names[i], scores[i]) for i in non_labeled_nodes if scores[i] < args.score_threshold],
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    from collections import defaultdict
+    import statistics
+
+    # Get the ground truth driver gene indices and names
+    ground_truth_driver_indices = [i for i, label in enumerate(labels) if label == 1]
+    ground_truth_driver_names = {node_names[i] for i in ground_truth_driver_indices}
+
+    # Save predictions (above and below threshold) to CSV
+    output_file_above = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_ongene_803_predicted_driver_genes_above_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    output_file_below = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_ongene_803_predicted_driver_genes_below_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+
+    with open(output_file_above, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(predicted_driver_nodes_above_threshold)
+
+    with open(output_file_below, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Gene Name', 'Score'])  # Header row
+        csvwriter.writerows(predicted_driver_nodes_below_threshold)
+
+    print(f"Predicted driver genes (above threshold) saved to {output_file_above}")
+
+    # Calculate degrees for nodes above and below the threshold (connecting only to label 1 nodes)
+    degree_counts_above = defaultdict(int)
+    degree_counts_below = defaultdict(int)
+
+    for src, dst in edges:
+        src_name = node_names[src]
+        dst_name = node_names[dst]
+
+        # Count only connections to ground truth driver genes (label 1 nodes)
+        if dst_name in ground_truth_driver_names:
+            if src_name in [gene for gene, _ in predicted_driver_nodes_above_threshold]:
+                degree_counts_above[src_name] += 1
+            elif src_name in [gene for gene, _ in predicted_driver_nodes_below_threshold]:
+                degree_counts_below[src_name] += 1
+
+    # Sort degrees by degree count in descending order
+    sorted_degree_counts_above = sorted(degree_counts_above.items(), key=lambda x: x[1], reverse=True)
+    sorted_degree_counts_below = sorted(degree_counts_below.items(), key=lambda x: x[1], reverse=True)
+
+    # Save degrees of predicted driver genes connecting to ground truth driver genes (above threshold)
+    degree_output_file_above = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_ongene_803_predicted_driver_gene_degrees_above_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    with open(degree_output_file_above, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Predicted Driver Gene', 'Degree'])  # Header row
+        csvwriter.writerows(sorted_degree_counts_above)
+        ##csvwriter.writerow(['Average Degree', average_degree_above])  # Save average degree
+
+    print(f"Degrees of predicted driver genes (above threshold) saved to {degree_output_file_above}")
+
+    # Save degrees of nodes with scores below the threshold (connecting only to label 1 nodes)
+    degree_output_file_below = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_ongene_803_predicted_driver_gene_degrees_below_threshold{args.score_threshold}_epo{args.num_epochs}.csv'
+    )
+    with open(degree_output_file_below, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Node', 'Degree'])  # Header row
+        csvwriter.writerows(sorted_degree_counts_below)
+        ##csvwriter.writerow(['Average Degree', average_degree_below])  # Save average degree
+
+    print(f"Degrees of nodes with scores below threshold saved to {degree_output_file_below}")
+    ##print(f"sorted_degree_counts_below: {sorted_degree_counts_below}")
+
+    # Prepare DataFrame for nodes with degrees
+    nodes_with_degrees = []
+
+    # Above threshold
+    for gene, degree in degree_counts_above.items():
+        nodes_with_degrees.append({'Gene_Set': 'Above Threshold', 'Degree': degree})
+
+    # Below threshold
+    for gene, degree in degree_counts_below.items():
+        nodes_with_degrees.append({'Gene_Set': 'Below Threshold', 'Degree': degree})
+
+    # Convert to DataFrame
+    nodes_with_degrees = pd.DataFrame(nodes_with_degrees)
+
+    ##print(f"sorted_degree_counts_below: {sorted_degree_counts_below}")
+    sorted_degree_counts_above_value = [value for _, value in sorted_degree_counts_above if value <= 50]
+    sorted_degree_counts_below_value = [value for _, value in sorted_degree_counts_below if value <= 50]
+    
+    output_above_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_ongene_803_output_above_file_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
+    output_below_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_ongene_803_output_below_file_threshold{args.score_threshold}_epo{args.num_epochs}.csv')
+
+
+    # Calculate statistics
+    non_labeled_nodes_count = len(non_labeled_nodes)
+    ground_truth_driver_nodes = [i for i, label in enumerate(labels) if label == 1]
+    ground_truth_non_driver_nodes = [i for i, label in enumerate(labels) if label == 0]
+
+    predicted_driver_nodes = [node_names[i] for i in non_labeled_nodes if scores[i] > 0.85]
+
+    # Prepare data to save to CSV
+    stats_output_file = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_ongene_803_prediction_stats_{args.num_epochs}.csv')
+    with open(stats_output_file, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Non-Labeled Nodes Count', 'Driver Genes', 'Non-Driver Genes', 'Total Testing Nodes', 'Predicted Driver Genes'])
+        csvwriter.writerow([
+            non_labeled_nodes_count,
+            len(ground_truth_driver_nodes),
+            len(ground_truth_non_driver_nodes),
+            len(ground_truth_driver_nodes) + len(ground_truth_non_driver_nodes),
+            len(predicted_driver_nodes)
+        ])
+
+    print(f"Prediction statistics saved to {stats_output_file}")
+
+
+    degree_data = [sorted_degree_counts_above_value, sorted_degree_counts_below_value]
+
+    # Create the box plot
+    plt.figure(figsize=(3, 4))
+
+    # Create the boxplot
+    boxplot = plt.boxplot(
+        degree_data,
+        vert=True,
+        patch_artist=True,  # Allows customization of box color
+        flierprops=dict(marker='o', markerfacecolor='grey', markeredgecolor='grey', markersize=5, alpha=0.2),  # Half-transparent gray dots for outliers
+        boxprops=dict(facecolor='green', color='black'),  # Color for boxes
+        medianprops=dict(color='blue', linewidth=2),  # Style for median lines
+        whiskerprops=dict(color='black', linewidth=1.5),  # Style for whiskers
+        capprops=dict(color='black', linewidth=1.5)  # Style for caps
+    )
+
+    # Customize frame
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)  # Remove the top frame line
+    ax.spines['right'].set_visible(False)  # Remove the right frame line
+
+    # Add labels and title
+    plt.xticks([1, 2], ['PCGs', 'Other'], fontsize=8)  # Category labels
+    plt.yticks(fontsize=8)
+    plt.ylabel('Interaction degrees with KCGs', fontsize=10, labelpad=10) 
+
+    # Add different bar colors for each category
+    colors = ['green', 'skyblue']
+    for patch, color in zip(boxplot['boxes'], colors):
+        patch.set_facecolor(color)
+
+    # Save the plot
+    output_plot_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_ongene_803_degree_distributions_threshold{args.score_threshold}_epo{args.num_epochs}.png'
+    )
+    plt.savefig(output_plot_path, bbox_inches='tight')
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+    print(f"Box plot saved to {output_plot_path}")
+
+    # Assuming args and necessary variables are defined earlier
+    # Prepare data for KDE plot
+    print("Preparing data for KDE plot...")
+    scores = torch.sigmoid(logits).cpu().numpy()  # Convert logits to probabilities
+    degrees = [
+        degree_counts_above.get(node_names[i], 0) +
+        degree_counts_below.get(node_names[i], 0)
+        for i in range(len(node_names))
+    ]
+
+    # Create DataFrame for plotting
+    plot_data = pd.DataFrame({
+        "Prob_pos_ranked": pd.Series(scores).rank(),
+        "Degree_ranked": pd.Series(degrees).rank()
+    })
+
+    # Plot KDE
+    print("Generating KDE plot...")
+    plt.figure(figsize=(4, 4))
+    kde_plot = sns.kdeplot(
+        x=plot_data["Prob_pos_ranked"],
+        y=plot_data["Degree_ranked"],
+        cmap="Reds",  # Gradient colormap
+        shade=True,
+        alpha=0.7,  # Transparency
+        levels=50,  # Contour levels
+        thresh=0.05  # Threshold to filter low-density regions
+    )
+
+    # Calculate Spearman correlation
+    correlation, p_value = scipy.stats.spearmanr(
+        plot_data["Prob_pos_ranked"],
+        plot_data["Degree_ranked"]
+    )
+
+    # Add labels and titles
+    plt.xticks(fontsize=8)  # Category labels
+    plt.yticks(fontsize=8)
+    plt.xlabel('PEGNN score rank', fontsize=10, labelpad=10)  # Adjusted label distance
+    plt.ylabel('KCG interaction rank', fontsize=12, labelpad=10)
+    plt.gca().tick_params(axis='both', labelsize=8)
+
+    # Manually add legend
+    legend_text = f"Spearman R: {correlation:.2f}\nP-value: {p_value:.3e}"
+    plt.text(
+        0.05, 0.95, legend_text,
+        fontsize=8, transform=plt.gca().transAxes,
+        verticalalignment='top', bbox=dict(facecolor='white', alpha=0.8, edgecolor='none')
+    )
+
+    # Save the KDE plot
+    kde_output_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_ongene_803_kde_plot_threshold{args.score_threshold}_epo{args.num_epochs}.png'
+    )
+    plt.savefig(kde_output_path, bbox_inches='tight')
+    print(f"KDE plot saved to {kde_output_path}")
+
+    # Show plot
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+    # Assuming scores and labels might be PyTorch tensors
+    labeled_scores = scores[train_mask.cpu().numpy()] if isinstance(scores, torch.Tensor) else scores[train_mask]
+    labeled_labels = labels[train_mask.cpu().numpy()] if isinstance(labels, torch.Tensor) else labels[train_mask]
+
+    output_file_roc = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_ongene_803_threshold{args.score_threshold}_epo{args.num_epochs}_roc_curves.png')
+    output_file_pr = os.path.join('results/gene_prediction/', f'{args.net_type}_{args.model_type}_ongene_803_threshold{args.score_threshold}_epo{args.num_epochs}_pr_curves.png')
+
+    # Convert labeled_labels and labeled_scores to NumPy arrays if they are PyTorch tensors
+    if isinstance(labeled_scores, torch.Tensor):
+        labeled_scores_np = labeled_scores.cpu().detach().numpy()
+    else:
+        labeled_scores_np = labeled_scores
+
+    if isinstance(labeled_labels, torch.Tensor):
+        labeled_labels_np = labeled_labels.cpu().detach().numpy()
+    else:
+        labeled_labels_np = labeled_labels
+
+    # Plot curves
+    plot_roc_curve(labeled_labels_np, labeled_scores_np, output_file_roc)
+    plot_pr_curve(labeled_labels_np, labeled_scores_np, output_file_pr)
+
+
+
+    # Define models and networks
+    # models = ["PERTAG", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GraphSAGE", "GIN"]
+    models = ["ATTAG", "DMGNN", "MOGAT", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GIN"]
+    networks = ["Protein Network", "Pathway Network", "Gene Network"]
+
+    # AUPRC values for ONGene and OncoKB for each model (rows: models, cols: networks)
+    auprc_ongene = [
+        [0.97, 0.98, 0.99],  # ATTAG
+        [0.9389, 0.9312, 0.9472],  # DMGNN
+        [0.8893, 0.9073, 0.8829],  # MOGAT
+        [0.95, 0.93, 0.84],  # GAT
+        [0.92, 0.89, 0.92],  # HGDC
+        [0.95, 0.82, 0.89],  # EMOGI
+        [0.92, 0.85, 0.94],  # MTGCN
+        [0.93, 0.88, 0.87],  # GCN
+        [0.96, 0.97, 0.95],  # Chebnet
+        # [0.94, 0.92, 0.94],  # GraphSAGE
+        [0.88, 0.92, 0.93]   # GIN
+    ]
+
+    auprc_oncokb = [
+        [0.96, 0.99, 0.98],  # ATTAG
+        [0.9370, 0.9494, 0.9251],  # DMGNN
+        [0.8738, 0.8132, 0.8849],  # MOGAT
+        [0.96, 0.94, 0.84],  # GAT
+        [0.95, 0.90, 0.95],  # HGDC
+        [0.94, 0.91, 0.92],  # EMOGI
+        [0.93, 0.81, 0.96],  # MTGCN
+        [0.91, 0.83, 0.85],  # GCN
+        [0.95, 0.99, 0.97],  # Chebnet
+        # [0.95, 0.95, 0.96],  # GraphSAGE
+        [0.88, 0.94, 0.89]   # GIN
+    ]
+
+    # Compute averages for each model
+    average_ongene = np.mean(auprc_ongene, axis=1)
+    average_oncokb = np.mean(auprc_oncokb, axis=1)
+
+    # Define colors for models and unique shapes for networks
+    # colors = ['red', 'grey', 'blue', 'green', 'purple', 'orange', 'cyan', 'brown', 'pink']
+    colors = ['red', 'yellow', 'magenta', 'grey', 'blue', 'green', 'purple', 'orange', 'cyan', 'pink']
+    network_markers = ['P', '^', 's']  # One shape for each network
+    ##markers = ['o', 's', 'D', '^', 'P', '*']
+    average_marker = 'o'
+
+    # Plotting
+    plt.figure(figsize=(8, 7))
+
+    # Plot individual points for each model and network
+    for i, model in enumerate(models):
+        for j, network in enumerate(networks):
+            plt.scatter(auprc_ongene[i][j], auprc_oncokb[i][j], color=colors[i], 
+                        marker=network_markers[j], s=90, alpha=0.6)
+
+    # Add average points for each model
+    for i, model in enumerate(models):
+        plt.scatter(average_ongene[i], average_oncokb[i], color=colors[i], marker=average_marker, 
+                    s=240, edgecolor='none', alpha=0.5)
+
+    # Create legends for models (colors) and networks (shapes)
+    model_legend = [Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[i], 
+                            markersize=14, label=models[i], alpha=0.5) for i in range(len(models))]
+    network_legend = [Line2D([0], [0], marker=network_markers[i], color='k', linestyle='None', 
+                            markersize=8, label=networks[i]) for i in range(len(networks))]
+
+    # Add network legend (bottom-right, unique shapes)
+    network_legend_artist = plt.legend(handles=network_legend, loc='lower right', title="Networks", fontsize=12, title_fontsize=14, frameon=True)
+    plt.gca().add_artist(network_legend_artist)
+
+    # Add model legend (top-left, colors)
+    ##plt.legend(handles=model_legend, loc='upper left', title=" ", fontsize=10, title_fontsize=12, frameon=True)
+    plt.legend(handles=model_legend, loc='upper left', fontsize=12, frameon=True)
+
+
+    # Labels and title
+    plt.xlabel("AUPRC for ONGene", fontsize=14)
+    plt.ylabel("AUPRC for OncoKB", fontsize=14)
+    ##plt.title("Comparison of Models and Networks", fontsize=14)
+
+    comp_output_path = os.path.join(
+        'results/gene_prediction/',
+        f'{args.net_type}_{args.model_type}_comp_plot_threshold{args.score_threshold}_epo{args.num_epochs}_ongene.png'
+    )
+    # Adjust layout first
+    plt.tight_layout()
+    plt.savefig(comp_output_path, bbox_inches='tight')
+    print(f"KDE plot saved to {kde_output_path}")
+    plt.show()
 
 def train(args):
     # Load data
@@ -415,41 +1530,70 @@ def train(args):
     plot_pr_curve(labeled_labels_np, labeled_scores_np, output_file_pr)
 
     # Define models and networks
-    models = ["ATTAG", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GraphSAGE", "GIN"]
+    models = ["ATTAG", "DMGNN", "MOGAT", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GIN"]
     ## models = ["ATTAG", "MOGAT", "GAT", "HGDC", "EMOGI", "MTGCN", "GCN", "Chebnet", "GraphSAGE", "GIN"]
     networks = ["Protein Network", "Pathway Network", "Gene Network"]
 
     # AUPRC values for ONGene and OncoKB for each model (rows: models, cols: networks)
+    '''auprc_ongene = [
+        [0.97, 0.98, 0.99],  # PERTAG
+        [0.95, 0.93, 0.84],  # GAT
+        [0.92, 0.89, 0.92],  # HGDC
+        [0.95, 0.82, 0.89],  # EMOGI
+        [0.92, 0.85, 0.94],  # MTGCN
+        [0.93, 0.88, 0.87],  # GCN
+        [0.96, 0.97, 0.95],  # Chebnet
+        # [0.94, 0.92, 0.94],  # GraphSAGE
+        [0.88, 0.92, 0.93]   # GIN
+    ]
+
+    auprc_oncokb = [
+        [0.96, 0.99, 0.98],  # PERTAG
+        [0.96, 0.94, 0.84],  # GAT
+        [0.95, 0.90, 0.95],  # HGDC
+        [0.94, 0.91, 0.92],  # EMOGI
+        [0.93, 0.81, 0.96],  # MTGCN
+        [0.91, 0.83, 0.85],  # GCN
+        [0.95, 0.99, 0.97],  # Chebnet
+        # [0.95, 0.95, 0.96],  # GraphSAGE
+        [0.88, 0.94, 0.89]   # GIN
+    ]'''
+    
+    # AUPRC values for ONGene and OncoKB for each model (rows: models, cols: networks)
     auroc = [
-        [0.8285, 0.9647, 0.9723],  # ATTAG
+        [0.8755, 0.9647, 0.9723],  # ATTAG
+        [0.6929, 0.9087, 0.7779],  # DMGNN
+        [0.6683, 0.8752, 0.7730],  # MOGAT
         [0.7689, 0.9190, 0.7021],  # GAT
         [0.7471, 0.9167, 0.7078],  # HGDC
         [0.6885, 0.9196, 0.7358],  # EMOGI
         [0.7199, 0.7932, 0.7664],  # MTGCN
         [0.7254, 0.8317, 0.7681],  # GCN
         [0.8636, 0.9539, 0.8686],  # Chebnet
-        [0.8338, 0.9747, 0.9403],  # GraphSAGE
+        # [0.8338, 0.9747, 0.9403],  # GraphSAGE
         [0.5854, 0.9193, 0.9293]   # GIN
     ]
 
     auprc = [
-        [0.9700, 0.9748, 0.9854],  # ATTAG
+        [0.9784, 0.9748, 0.9854],  # ATTAG
+        [0.9396, 0.9446, 0.8732],  # DMGNN
+        [0.8752, 0.9144, 0.8734],  # MOGAT
         [0.9452, 0.9430, 0.8066],  # GAT
         [0.9408, 0.9343, 0.7999],  # HGDC
         [0.9251, 0.9432, 0.8260],  # EMOGI
         [0.9122, 0.8392, 0.8575],  # MTGCN
         [0.9329, 0.8829, 0.8579],  # GCN
         [0.9760, 0.9687, 0.9217],  # Chebnet
-        [0.9703, 0.9533, 0.9659],  # GraphSAGE
+        # [0.9703, 0.9533, 0.9659],  # GraphSAGE
         [0.8941, 0.9346, 0.9611]   # GIN
     ]
-
+    
     # Compute averages for each model
     average_ongene = np.mean(auroc, axis=1)
     average_oncokb = np.mean(auprc, axis=1)
 
     # Define colors for models and unique shapes for networks
-    colors = ['red', 'grey', 'blue', 'green', 'purple', 'orange', 'cyan', 'brown', 'pink']
+    colors = ['red', 'yellow', 'magenta', 'grey', 'blue', 'green', 'purple', 'orange', 'cyan', 'pink']
     network_markers = ['P', '^', 's']  # One shape for each network
     ##markers = ['o', 's', 'D', '^', 'P', '*']
     average_marker = 'o'
@@ -486,15 +1630,18 @@ def train(args):
     # Labels and title
     plt.ylabel("AUPRC", fontsize=14)
     plt.xlabel("AUROC", fontsize=14)
-    ##plt.title("Comparison of Models and Networks", fontsize=14)
+    # plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(0.25))
+    # plt.gca().yaxis.set_major_locator(ticker.MultipleLocator(0.25))
 
-    comp_output_path = os.path.join(
-        f'{args.net_type}_{args.model_type}_comp_plot_threshold{args.score_threshold}_epo{args.num_epochs}.png'
+    ##plt.title("Comparison of Models and Networks", fontsize=14)
+    
+    comp_output_path = os.path.join('results/gene_prediction/', 
+        f'{args.net_type}_{args.model_type}_comp_plot_threshold{args.score_threshold}_epo{args.num_epochs}_auroc.png'
     )
-    plt.savefig(comp_output_path, bbox_inches='tight')
-    print(f"KDE plot saved to {kde_output_path}")
     # Adjust layout and show plot
     plt.tight_layout()
+    plt.savefig(comp_output_path, bbox_inches='tight')
+    print(f"KDE plot saved to {kde_output_path}")
     plt.show()
 
 if __name__ == "__main__":
@@ -505,7 +1652,7 @@ if __name__ == "__main__":
     parser.add_argument('--hidden_feats', type=int, default=128, help="Number of hidden features in GNN layers")
     parser.add_argument('--out_feats', type=int, default=1, help="Number of out features in GNN layers")
     parser.add_argument('--learning_rate', type=float, default=0.001, help="Learning rate for optimizer")
-    parser.add_argument('--num_epochs', type=int, default=100, help="Number of training epochs")
+    parser.add_argument('--num_epochs', type=int, default=200, help="Number of training epochs")
     parser.add_argument('--model_type', type=str, choices=['GraphSAGE', 'GAT', 'HGDC', 'EMOGI', 'MTGCN', 'GCN', 'GIN', 'Chebnet', 'MOGAT', 'DMGNN', 'ATTAG'], required=True, help="Type of GNN model to use")
     parser.add_argument('--net_type', type=str, choices=['pathnet', 'ppnet', 'ggnet'], required=True, help="Type of gene net to use")
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help="Device to run the model on")

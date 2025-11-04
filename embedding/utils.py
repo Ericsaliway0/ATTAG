@@ -34,9 +34,9 @@ def save_stid_to_csv(graph, save_dir):
 
 # Create network using protein interaction data
 def create_network_from_genes(data, kge):
-    ##graph = Network('gat/data/split_files/protein_interaction_p_value_results_with_fdr_ptmod.csv') 
+    # graph = Network('gat/data/split_files/protein_interaction_p_value_results_with_fdr_ptmod.csv') 
     ##graph = Network('gat/data/protein_interaction_p_value_results_with_fdr_SHS27k.csv')
-    graph = Network('data/GGNet/ggnet_gene_interaction_p_value_results_with_fdr_two_commons.csv')
+    graph = Network('data/GGNet/gene_interaction_p_value_results_with_fdr_two_commons.csv')
     ##graph = Network('gat/data/inhibition_protein_interaction_p_value_results_with_fdr_SHS27k.csv')
     # Initialize the protein network
     graph.interaction_data = data  # Assign the filtered data directly
@@ -49,8 +49,9 @@ def create_embedding_with_genes(p_value=0.05, save=True, data_dir='data/emb'):
     # Read protein interaction p-values from CSV
     ##p_value_path = os.path.join('gat/data/split_files/', 'protein_interaction_p_value_results_with_fdr_ptmod.csv')
     ##p_value_path = os.path.join('gat/data/', 'inhibition_protein_interaction_p_value_results_with_fdr_SHS27k.csv')
-    ##p_value_path = os.path.join('data/GGNet/', 'ggnet_filtered_methylation.csv')
-    p_value_path = os.path.join('data/GGNet/', 'ggnet_gene_interaction_p_value_results_with_fdr_two_commons.csv')
+    # p_value_path = os.path.join('data/GGNet/', 'ggnet_filtered_methylation.csv')
+    p_value_path = os.path.join('data/GGNet/', 'gene_interaction_p_value_results_with_fdr_two_commons.csv')
+    # p_value_path = os.path.join('data/GGNet/', 'ggnet_gene_interaction_p_value_results_with_fdr_two_commons.csv')
     p_value_df = pd.read_csv(p_value_path)
 
     # Filter based on p-value threshold

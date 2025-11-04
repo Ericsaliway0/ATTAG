@@ -24,11 +24,11 @@ def main():
     args = parser.parse_args()
 
     # Main script to create embeddings and save to disk
-    utils.create_embedding_with_genes(
-        ##p_value=args.p_value, 
-        save=args.save, 
-        data_dir=args.data_dir
-    )
+    # utils.create_embedding_with_genes(
+    #     ##p_value=args.p_value, 
+    #     save=args.save, 
+    #     data_dir=args.data_dir
+    # )
 
     hyperparameters = {
         'num_epochs': args.num_epochs,
@@ -63,4 +63,4 @@ if __name__ == '__main__':
 ## python __embedding_pathway_gcn_gene/gat_embedding.py --out_feats 256 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 100
 ## python embedding_pathway_gcn/gat_embedding.py --out_feats 128 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 2002
 ## python gat/gat_embedding.py --out_feats 128 --num_layers 3 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 2002
-## python embedding/embedding.py --in_feats 256 --out_feats 256 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 5
+## python embedding/gat_embedding.py --in_feats 256 --out_feats 256 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 5

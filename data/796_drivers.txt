@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 | Rank | Feature         | Total Saliency |
 | ---- | --------------- | -------------- |
 | 1    | MF: Liver       | 1703.35        |
@@ -11,7 +10,6 @@
 | 8    | METH: Esophagus | 1168.37        |
 | 9    | GE: Thyroid     | 1162.49        |
 | 10   | METH: Prostate  | 1111.22        |
-=======
 EGFR
 EGF
 PIK3CA
@@ -808,4 +806,3 @@ SETDB2
 GRPR
 CYP19A1
 GPC5
->>>>>>> 740e91fa1a6016f9735660fe52e779dae3a72d48

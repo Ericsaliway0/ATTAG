@@ -12,8 +12,13 @@ class Dataset(DGLDataset):
         self.root = os.path.abspath(root)
         if 'processed' not in os.listdir(self.root):
             subprocess.run(f"mkdir 'tmp'", shell=True, cwd=self.root)
-        raw_dir = os.path.join(self.root, 'raw')
-        save_dir = os.path.join(self.root, 'processed')
+        raw_dir = os.path.join(root, 'raw')
+        save_dir = os.path.join(root, 'processed')
+        model_dir = os.path.join(root, 'models')
+
+        os.makedirs(raw_dir, exist_ok=True)
+        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(model_dir, exist_ok=True)
         super().__init__(name='gene_graph', raw_dir=raw_dir, save_dir=save_dir)
         
 
