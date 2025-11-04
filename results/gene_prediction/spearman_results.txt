@@ -1,2 +1,0 @@
-Spearman Correlation: nan
-P-value: nan
