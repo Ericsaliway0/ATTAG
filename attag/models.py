@@ -824,3 +824,132 @@ class ATTAG(nn.Module):
         x = self.dropout(x)
         out = self.mlp(x)  # (N, out_feats)
         return out
+
+####################################
+# no-AttentionLayer
+####################################
+
+
+# ---------------------------
+# TAG-only model (no attention)
+# ---------------------------
+class ATTAG(nn.Module):
+# class TAGv2_noAttn(nn.Module):
+    def __init__(self, in_feats, hidden_feats, out_feats, k=3, dropout=0.5, activation=F.relu):
+        super(ATTAG, self).__init__()
+        self.activation = activation
+
+        # First TAGConv block
+        self.tag1 = TAGConv(in_feats, hidden_feats, k=k, bias=True)
+        self.bn1 = nn.BatchNorm1d(hidden_feats)
+
+        # Second TAGConv block
+        self.tag2 = TAGConv(hidden_feats, hidden_feats, k=k, bias=True)
+        self.bn2 = nn.BatchNorm1d(hidden_feats)
+
+        # Dropout
+        self.dropout = nn.Dropout(dropout)
+
+        # Final MLP
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_feats, hidden_feats),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_feats, out_feats)
+        )
+
+        # Residual projection if input dims differ
+        self.res_proj1 = nn.Linear(in_feats, hidden_feats) if in_feats != hidden_feats else None
+
+    def forward(self, g, features):
+        device = features.device
+        g = g.to(device)
+        h = features
+
+        # First TAGConv -> BN -> Act
+        res1 = h
+        x = self.tag1(g, h)
+        x = self.bn1(x)
+        x = self.activation(x)
+
+        # project residual if dims mismatch
+        if self.res_proj1 is not None:
+            res1 = self.res_proj1(res1)
+
+        # direct residual addition (no attention weighting)
+        x = x + res1
+
+        # Second TAGConv -> BN -> Act
+        res2 = x
+        x = self.tag2(g, x)
+        x = self.bn2(x)
+        x = self.activation(x)
+
+        # residual addition again
+        x = x + res2
+
+        # Dropout and output layer
+        x = self.dropout(x)
+        out = self.mlp(x)
+        return out
+
+
+
+####################################
+# no-ResidualConnections
+####################################
+
+# ---------------------------
+# TAG + Attention model WITHOUT Residual Connections
+# ---------------------------
+
+class ATTAG(nn.Module):
+# class ATTAG_noRes(nn.Module):
+    def __init__(self, in_feats, hidden_feats, out_feats, k=3, dropout=0.5, activation=F.relu):
+        super(ATTAG, self).__init__()
+        self.activation = activation
+
+        # First TAGConv block
+        self.tag1 = TAGConv(in_feats, hidden_feats, k=k, bias=True)
+        self.bn1 = nn.BatchNorm1d(hidden_feats)
+
+        # Attention layer
+        self.attn = AttentionLayer(hidden_feats)
+
+        # Second TAGConv block
+        self.tag2 = TAGConv(hidden_feats, hidden_feats, k=k, bias=True)
+        self.bn2 = nn.BatchNorm1d(hidden_feats)
+
+        # Dropout
+        self.dropout = nn.Dropout(dropout)
+
+        # Final MLP
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_feats, hidden_feats),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_feats, out_feats)
+        )
+
+    def forward(self, g, features):
+        device = features.device
+        g = g.to(device)
+        h = features
+
+        # First TAGConv -> BN -> Act
+        x = self.tag1(g, h)
+        x = self.bn1(x)
+        x = self.activation(x)
+
+        # Attention-based aggregation (edge weights)
+        x = self.attn(g, x)
+
+        # Second TAGConv -> BN -> Act
+        x = self.tag2(g, x)
+        x = self.bn2(x)
+        x = self.activation(x)
+
+        # Dropout and output layer
+        x = self.dropout(x)
+        out = self.mlp(x)
+        return out
