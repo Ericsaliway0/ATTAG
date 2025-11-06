@@ -4,18 +4,16 @@ import torch
 import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-
 import dataset
 import model
 import train
-from network import Network  # Importing the updated Network class
+from network import Network 
 
-# Read stId mapping from the graph
+
 def get_stid_mapping(graph):
     stid_mapping = {node_id: data['stId'] for node_id, data in graph.graph_nx.nodes(data=True)}
     return stid_mapping
 
-# Save graph to disk
 def save_to_disk(graph, save_dir):
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, f'{graph.kge}.pkl')
@@ -23,7 +21,6 @@ def save_to_disk(graph, save_dir):
         pickle.dump(graph.graph_nx, f)
     print(f"Graph saved to {save_path}")
 
-# Save stId to CSV
 def save_stid_to_csv(graph, save_dir):
     os.makedirs(save_dir, exist_ok=True)
     stid_data = {'stId': [data['stId'] for _, data in graph.graph_nx.nodes(data=True)]}
@@ -32,7 +29,6 @@ def save_stid_to_csv(graph, save_dir):
     df.to_csv(csv_path, index=False)
     print(f"stId nodes saved to {csv_path}")
 
-# Create network using protein interaction data
 def create_network_from_genes(data, kge):
     # graph = Network('gat/data/split_files/protein_interaction_p_value_results_with_fdr_ptmod.csv') 
     ##graph = Network('gat/data/protein_interaction_p_value_results_with_fdr_SHS27k.csv')
@@ -44,7 +40,6 @@ def create_network_from_genes(data, kge):
     graph.kge = kge  # Set the knowledge graph embedding identifier
     return graph
 
-# Function to create embedding with genes directly
 def create_embedding_with_genes(p_value=0.05, save=True, data_dir='data/emb'):
     # Read protein interaction p-values from CSV
     ##p_value_path = os.path.join('gat/data/split_files/', 'protein_interaction_p_value_results_with_fdr_ptmod.csv')
@@ -72,59 +67,6 @@ def create_embedding_with_genes(p_value=0.05, save=True, data_dir='data/emb'):
         save_to_disk(graph_test, save_dir)
 
     return graph_train, graph_test
-
-# Function to create embeddings using GAT model
-def create_embeddings_ori(load_model=True, save=True, data_dir='data/emb', hyperparams=None, plot=True):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Load dataset and set up directories
-    data = dataset.Dataset(data_dir)  # Adjust dataset to handle protein interactions
-    emb_dir = os.path.abspath(os.path.join(data_dir, 'embeddings'))
-    os.makedirs(emb_dir, exist_ok=True)
-
-    # Model parameters
-    in_feats = hyperparams['in_feats']
-    out_feats = hyperparams['out_feats']
-    num_layers = hyperparams['num_layers']
-    num_heads = hyperparams.get('num_heads', 2)  # Default to 2 heads if not specified
-
-
-    dim_latent = hyperparams['out_feats']
-    '''num_layers = hyperparams['num_layers']
-    
-    net = model.SAGEModel(dim_latent=dim_latent, num_layers=num_layers).to(device)'''
-    ## net = model.GATModel(in_feats=in_feats, out_feats=out_feats, num_layers=num_layers, num_heads=num_heads).to(device)
-    ##net = model.GCNModel(dim_latent=dim_latent, num_layers=num_layers).to(device)
-    net = model.TAGCNModel(dim_latent=out_feats, num_layers=num_layers).to(device)
-
-    # Load or train the model
-    if load_model:
-        model_path = os.path.join(data_dir, 'models', 'model.pth')
-        net.load_state_dict(torch.load(model_path))
-    else:
-        model_path = train.train(hyperparams=hyperparams, data_path=data_dir, plot=plot)
-        net.load_state_dict(torch.load(model_path))
-
-    # Generate and save embeddings
-    embedding_dict = {}
-    for idx in tqdm(range(len(data))):
-        graph, name = data[idx]
-        graph = graph.to(device)
-        
-        with torch.no_grad():
-            embedding = net(graph)
-        embedding_dict[name] = embedding.cpu()
-
-        if save:
-            emb_path = os.path.join(emb_dir, f'{name[:-4]}.pth')
-            torch.save(embedding.cpu(), emb_path)
-            print(f"Embedding for {name} saved to {emb_path}")
-
-    return embedding_dict
-
-import os
-import torch
-from tqdm import tqdm
 
 def choose_model(model_type, dim_latent, num_layers, heads=2, **kwargs):
     model_type = model_type.lower()
@@ -155,7 +97,6 @@ def choose_model(model_type, dim_latent, num_layers, heads=2, **kwargs):
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
-
 def create_embeddings(
     load_model=True,
     save=True,
@@ -164,39 +105,25 @@ def create_embeddings(
     plot=True
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # ----------------------------------------------------
-    # Load Dataset
-    # ----------------------------------------------------
-    data = dataset.Dataset(data_dir)      # <-- must implement __getitem__ return (graph, name)
+    data = dataset.Dataset(data_dir)    
     emb_dir = os.path.abspath(os.path.join(data_dir, 'embeddings'))
     os.makedirs(emb_dir, exist_ok=True)
 
-    # ----------------------------------------------------
-    # Model Hyperparameters
-    # ----------------------------------------------------
     model_type = hyperparams.get("model_type", "tagcn")   # default: TAGCN
     dim_latent = hyperparams["out_feats"]
     num_layers = hyperparams["num_layers"]
 
-    # optional for GAT
     num_heads = hyperparams.get("num_heads", 4)
 
-    # ----------------------------------------------------
-    # Build Model
-    # ----------------------------------------------------
     net = choose_model(
         model_type=model_type,
         dim_latent=dim_latent,
         num_layers=num_layers,
         do_train=False,
-        heads=num_heads      # accepted only by GAT; ignored by other models
+        heads=num_heads    
     ).to(device)
 
-    # ----------------------------------------------------
-    # Load / Train model
-    # ----------------------------------------------------
-    model_path = os.path.join(data_dir, "models", "model.pth")
+    model_path = os.path.join(data_dir, "models", f"model.pth")
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
     if load_model and os.path.exists(model_path):
@@ -213,9 +140,6 @@ def create_embeddings(
 
     net.eval()
 
-    # ----------------------------------------------------
-    # Generate embeddings
-    # ----------------------------------------------------
     embedding_dict = {}
 
     for idx in tqdm(range(len(data)), desc="Generating embeddings"):
@@ -223,7 +147,6 @@ def create_embeddings(
         graph = graph.to(device)
 
         with torch.no_grad():
-            # ALWAYS get embeddings through unified API
             embedding = net.get_node_embeddings(graph)
 
         embedding_dict[name] = embedding.cpu()

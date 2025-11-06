@@ -1,173 +1,17 @@
+import math
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn as nnimport dgl
 import dgl.function as fn
+from dgl.nn import SAGEConv, GATConv, GraphConv, GINConv, ChebConv
+from dgl.nn.pytorch import TAGConv
+from dgl.nn.functional import edge_softmax
 from torch_geometric.nn import GCNConv
-from torch.nn import Linear
-from dgl.nn import SAGEConv, GATConv, GraphConv, GINConv, ChebConv, TAGConv
-from torch_geometric.utils import dropout_edge, negative_sampling, remove_self_loops, add_self_loops
-
-
-class AttentionLayer(nn.Module):
-    def __init__(self, hidden_feats):
-        super(AttentionLayer, self).__init__()
-        self.attn = nn.Linear(2 * hidden_feats, 1)  # Learnable attention weights
-
-    def forward(self, g, features):
-        with g.local_scope():
-            # Expand node features for attention computation
-            g.ndata['h'] = features
-            g.apply_edges(self._compute_attention)
-            g.edata['a'] = F.leaky_relu(g.edata['a'], negative_slope=0.2)
-            g.edata['a'] = torch.softmax(g.edata['a'], dim=1)  # Normalize attention scores
-            g.update_all(self._message_func, self._reduce_func)
-            return g.ndata['h']
-
-    def _compute_attention(self, edges):
-        # Concatenate source and destination node features for edge attention
-        z = torch.cat([edges.src['h'], edges.dst['h']], dim=-1)
-        a = self.attn(z)
-        return {'a': a}
-
-    def _message_func(self, edges):
-        return {'m': edges.src['h'] * edges.data['a']}
-
-    def _reduce_func(self, nodes):
-        return {'h': torch.sum(nodes.mailbox['m'], dim=1)}
-
-
-class ATTAG(nn.Module):
-    def __init__(self, in_feats, hidden_feats, out_feats, k=3, dropout=0.5):
-        super(ATTAG, self).__init__()
-        self.tag1 = TAGConv(in_feats, hidden_feats, k, bias=False)
-        self.bn1 = nn.BatchNorm1d(hidden_feats)
-        self.attn = AttentionLayer(hidden_feats)
-        self.tag2 = TAGConv(hidden_feats, hidden_feats, k, bias=False)
-        self.bn2 = nn.BatchNorm1d(hidden_feats)
-        self.dropout = nn.Dropout(dropout)
-        self.mlp = nn.Sequential(
-            nn.Linear(hidden_feats, hidden_feats),
-            nn.ReLU(inplace=True),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_feats, out_feats)
-        )
-
-    def forward(self, g, features):
-        # Assume g and features are already on GPU
-        x = self.tag1(g, features)
-        x = self.bn1(x)
-        x = F.relu(x, inplace=True)
-        x = self.attn(g, x)
-        x = self.tag2(g, x)
-        x = self.bn2(x)
-        x = F.relu(x, inplace=True)
-        x = self.dropout(x)
-        return self.mlp(x)
-
-class ATTAG_(nn.Module):
-    def __init__(self, in_feats, hidden_feats, out_feats, k=3, dropout=0.5, activation=F.relu):
-        super(ATTAG, self).__init__()
-        self.activation = activation
-        
-        # First TAGConv block
-        self.tag1 = TAGConv(in_feats, hidden_feats, k)
-        self.bn1 = nn.BatchNorm1d(hidden_feats)
-
-        # Attention layer
-        self.attn = AttentionLayer(hidden_feats)
-
-        # Second TAGConv block
-        self.tag2 = TAGConv(hidden_feats, hidden_feats, k)
-        self.bn2 = nn.BatchNorm1d(hidden_feats)
-
-        # Dropout
-        self.dropout = nn.Dropout(dropout)
-
-        # Final MLP
-        self.mlp = nn.Sequential(
-            nn.Linear(hidden_feats, hidden_feats),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_feats, out_feats)
-        )
-
-        # Projection layers for residuals if dimensions differ
-        self.res_proj1 = nn.Linear(in_feats, hidden_feats) if in_feats != hidden_feats else None
-        self.res_proj2 = None  # hidden_feats → hidden_feats (no projection needed)
-
-    def forward(self, g, features):
-        device = features.device
-        g = g.to(device)
-
-        # ===== First TAGConv + Attention with Residual =====
-        res1 = features
-        x = self.tag1(g, features)
-        x = self.bn1(x)
-        x = self.activation(x)
-
-        x = self.attn(g, x)  # Apply attention
-
-        # Project residual if needed
-        if self.res_proj1 is not None:
-            res1 = self.res_proj1(res1)
-
-        x = x + res1  # Residual connection
-
-        # ===== Second TAGConv with Residual =====
-        res2 = x
-        x = self.tag2(g, x)
-        x = self.bn2(x)
-        x = self.activation(x)
-
-        if self.res_proj2 is not None:
-            res2 = self.res_proj2(res2)
-
-        x = x + res2  # Residual connection
-
-        # ===== Final MLP =====
-        x = self.dropout(x)
-        return self.mlp(x)
-
-class MOGAT_no_learn(nn.Module):
-    def __init__(self, in_feats, hidden_feats, out_feats, heads=4, dropout=0.6):
-        super(MOGAT, self).__init__()
-        self.gat1 = GATConv(in_feats, hidden_feats, num_heads=heads, feat_drop=dropout, attn_drop=dropout)
-        self.gat2 = GATConv(hidden_feats * heads, hidden_feats, num_heads=1, feat_drop=dropout, attn_drop=dropout)
-
-        self.mlp = nn.Sequential(
-            nn.Linear(hidden_feats, hidden_feats),
-            nn.ReLU(),
-            nn.Linear(hidden_feats, out_feats)
-        )
-
-    def forward(self, g, features):
-        """
-        Forward pass for MOGAT.
-
-        Parameters:
-        - g: DGLGraph on the same device as the model.
-        - features: Node features tensor.
-
-        Returns:
-        - logits: Raw output scores [num_nodes, out_feats]
-        - embeddings: Node embeddings from the last GAT layer.
-        """
-        # First GAT layer (multi-head)
-        x = self.gat1(g, features)   # Shape: [N, heads, hidden_feats]
-        x = x.flatten(1)             # Merge heads → shape: [N, hidden_feats * heads]
-        x = F.elu(x)
-        x = F.dropout(x, p=0.6, training=self.training)
-
-        # Second GAT layer (single head)
-        x = self.gat2(g, x)          # Shape: [N, 1, hidden_feats]
-        x = x.squeeze(1)             # → shape: [N, hidden_feats]
-        x = F.elu(x)
-
-        embeddings = x               # Store embeddings before classification
-        logits = self.mlp(x)         # Final classification
-
-        # return logits, embeddings
-        return logits
+from torch_geometric.utils import (
+    dropout_edge,
+    negative_sampling,
+    remove_self_loops,
+    add_self_loops,
+)
 
 class MOGAT(nn.Module):
     def __init__(self, in_feats, hidden_feats, out_feats, heads=1, dropout=0.2):
@@ -602,14 +446,6 @@ class FocalLoss(nn.Module):
         focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
         return focal_loss.mean()
 
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import dgl
-import dgl.function as fn
-from dgl.nn.functional import edge_softmax
-
 class FastAttentionLayer(nn.Module):
     """
     Efficient multi-head dot-product attention layer for DGL graphs.
@@ -715,22 +551,12 @@ class FastAttentionLayer(nn.Module):
 
         return self.activation(h_new)
 
-# Requires: torch, dgl
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import dgl
-import dgl.function as fn
-from dgl.nn.pytorch import TAGConv
-from dgl.nn.functional import edge_softmax
-
 # ---------------------------
 # Attention Layer (DGL)
 # ---------------------------
 class AttentionLayer(nn.Module):
     def __init__(self, hidden_feats):
         super(AttentionLayer, self).__init__()
-        # maps concat([h_src, h_dst]) -> scalar score
         self.attn = nn.Linear(2 * hidden_feats, 1, bias=True)
         self.leaky_slope = 0.2
 
@@ -742,19 +568,15 @@ class AttentionLayer(nn.Module):
         """
         with g.local_scope():
             g.ndata['h'] = h
-            # compute unnormalized attention per edge
             def compute_edge_attention(edges):
                 z = torch.cat([edges.src['h'], edges.dst['h']], dim=-1)  # (E, 2D)
                 a = self.attn(z).squeeze(-1)  # (E,)
                 return {'a': a}
             g.apply_edges(compute_edge_attention)
 
-            # leaky relu
             g.edata['a'] = F.leaky_relu(g.edata['a'], negative_slope=self.leaky_slope)
-            # normalize across incoming edges for each destination node
-            g.edata['a'] = edge_softmax(g, g.edata['a'])  # (E,)
+            g.edata['a'] = edge_softmax(g, g.edata['a'])
 
-            # weighted message: m_ij = a_ij * h_i
             g.update_all(fn.u_mul_e('h', 'a', 'm'), fn.sum('m', 'h_new'))
             h_new = g.ndata['h_new']  # (N, D)
             return h_new
@@ -902,9 +724,7 @@ class ATTAG(nn.Module):
 # ---------------------------
 # TAG + Attention model WITHOUT Residual Connections
 # ---------------------------
-
 class ATTAG(nn.Module):
-# class ATTAG_noRes(nn.Module):
     def __init__(self, in_feats, hidden_feats, out_feats, k=3, dropout=0.5, activation=F.relu):
         super(ATTAG, self).__init__()
         self.activation = activation
@@ -936,20 +756,15 @@ class ATTAG(nn.Module):
         g = g.to(device)
         h = features
 
-        # First TAGConv -> BN -> Act
         x = self.tag1(g, h)
         x = self.bn1(x)
         x = self.activation(x)
-
-        # Attention-based aggregation (edge weights)
         x = self.attn(g, x)
-
-        # Second TAGConv -> BN -> Act
+        
         x = self.tag2(g, x)
         x = self.bn2(x)
         x = self.activation(x)
 
-        # Dropout and output layer
         x = self.dropout(x)
         out = self.mlp(x)
         return out
