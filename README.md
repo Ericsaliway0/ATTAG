@@ -40,5 +40,13 @@ The dataset is obtained from the following sources:
 6. Download the data from the built gene association graph using the link below and place it in the `data/` directory before training:
    - [Download Gene Association Data](https://drive.google.com/file/d/1lDDL6cy8LljFoHUu7nYo3mR58SsdcuuH/view?usp=drive_link)
 
-7. To train the model, run the following command:
+7. For pretraining, run the following command: 
+   ATTAG % python embedding/tag_embedding.py \
+      --model_type GraphSAGE \
+      --in_feats 256 --out_feats 256 \
+      --num_layers 2 \
+      --lr 0.0001 \
+      --num_epochs 5
+      
+8. For prediction, run the following command:
    - `python attag/train.py --model_type ATTAG --net_type ppnet --score_threshold 0.99 --learning_rate 0.001 --num_epochs 300`

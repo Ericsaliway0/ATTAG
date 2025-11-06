@@ -12,7 +12,7 @@ import torch.optim as optim
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.metrics import adjusted_rand_score, silhouette_score, davies_bouldin_score
 import dataset
 import model, utils, network
 from dgl.dataloading import GraphDataLoader
@@ -56,7 +56,7 @@ class FocalLoss(nn.Module):
         else:
             return F_loss
 
-def train(hyperparams=None, data_path='data/emb', plot=True):
+def train_(hyperparams=None, data_path='data/emb', plot=True):
     num_epochs = hyperparams['num_epochs']
     ##feat_drop = hyperparams['feat_drop']
     in_feats = hyperparams['in_feats']
@@ -67,7 +67,7 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     batch_size = hyperparams['batch_size']
     device = hyperparams['device']
     model_path = os.path.join(data_path, 'models')
-    model_path = os.path.join(model_path, f'model_dim{out_feats}_lay{num_layers}_epo{num_epochs}.pth')
+    model_path = os.path.join(model_path, f'model_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.pth')
     
     ds = dataset.Dataset(data_path)
     ds_train = [ds[0]]
@@ -105,10 +105,10 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     all_embeddings_initial, cluster_labels_initial = calculate_cluster_labels(best_model, dl_train, device)
     ##print('all_embeddings_initial---------------------------------\n', all_embeddings_initial)
     all_embeddings_initial = all_embeddings_initial.reshape(all_embeddings_initial.shape[0], -1)  # Flatten 
-    save_path_heatmap_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_heatmap_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
-    save_path_matrix_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
-    save_path_pca_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_pca_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
-    save_path_t_SNE_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_t-SNE_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
+    save_path_heatmap_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_heatmap_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
+    save_path_matrix_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
+    save_path_pca_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_pca_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
+    save_path_t_SNE_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_t-SNE_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
         
     for data in dl_train:
         graph, _ = data
@@ -133,9 +133,9 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
         stid_df_initial = pd.DataFrame.from_dict(stid_dic_initial, orient='index')
 
         # Save to CSV
-        ##csv_save_path = 'gat/data/gene_embeddings_initial_sage.csv'
-        csv_save_path_initial = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.csv')
-        ##csv_save_path_initial = os.path.join('gat/data/', f'inhibition_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.csv')
+        ##csv_save_path = 'gat/data/gene_embeddings_initial_sage_{model_type}.csv'
+        csv_save_path_initial = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.csv')
+        ##csv_save_path_initial = os.path.join('gat/data/', f'inhibition_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.csv')
         stid_df_initial.to_csv(csv_save_path_initial, index_label='stId')
                 
         ##print('stid_dic_initial=======================\n',stid_dic_initial) 
@@ -161,7 +161,7 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     summary_  = f"Silhouette Score: {silhouette_avg_}\n"
     summary_ += f"Davies-Bouldin Index: {davies_bouldin_}\n"
 
-    save_file_= os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.txt')
+    save_file_= os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.txt')
     with open(save_file_, 'w') as f:
         f.write(summary_)
 
@@ -283,8 +283,8 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
         stid_df_final = pd.DataFrame.from_dict(stid_dic, orient='index')
 
         # Save to CSV
-        ##csv_save_path = 'gat/data/gene_embeddings_final_sage.csv'
-        csv_save_path_final = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_final.csv')
+        ##csv_save_path = 'gat/data/gene_embeddings_final_sage_{model_type}.csv'
+        csv_save_path_final = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_final_{model_type}.csv')
         stid_df_final.to_csv(csv_save_path_final, index_label='stId')
       
         for node, cluster in zip(nx_graph.nodes, cluster_labels):
@@ -329,7 +329,12 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     visualize_embeddings_pca(all_embeddings, cluster_labels, stid_list, save_path_pca)
     silhouette_avg = silhouette_score(all_embeddings, cluster_labels)
     davies_bouldin = davies_bouldin_score(all_embeddings, cluster_labels)
-
+    
+    # --- Compare clustering consistency (stability ARI) ---
+    ari_stability = adjusted_rand_score(cluster_labels_initial, cluster_labels)
+    print("ari_stability###########################:")
+    print("ari_stability###########################:", ari_stability)
+    print("ari_stability###########################: {ari_stability}")
     print(f"Silhouette Score%%%%%%%%%%%%###########################: {silhouette_avg}")
     print(f"Davies-Bouldin Index: {davies_bouldin}")
 
@@ -339,8 +344,9 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     summary += f"Best F1 Score: {max_f1_train}\n"
     summary += f"Silhouette Score: {silhouette_avg}\n"
     summary += f"Davies-Bouldin Index: {davies_bouldin}\n"
-
-    save_file = os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.txt')
+    summary += f"Adjusted Rand Index (stability): {ari_stability}\n"
+        
+    save_file = os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.txt')
     with open(save_file, 'w') as f:
         f.write(summary)
 
@@ -358,15 +364,16 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     ##  save_to_neo4j(graph_train, stid_dic, stid_mapping, gene_map, gene_id_to_name_mapping, gene_id_to_symbol_mapping, neo4j_uri, neo4j_user, neo4j_password)
        
     '''gene_embeddings_initial = pd.DataFrame.from_dict(all_embeddings_initial)
-    gene_embeddings_initial.to_csv('gat/data/gene_embeddings_initial.csv', index_label='stId')
+    gene_embeddings_initial.to_csv('gat/data/gene_embeddings_initial_{model_type}.csv', index_label='stId')
 
     ##gene_embeddings_final = pd.DataFrame.from_dict(all_embeddings, orient='index')
     gene_embeddings_final = pd.DataFrame.from_dict(all_embeddings)
-    gene_embeddings_final.to_csv('gat/data/gene_embeddings_final.csv', index_label='stId')'''
+    gene_embeddings_final.to_csv('gat/data/gene_embeddings_final_{model_type}.csv', index_label='stId')'''
 
     return model_path
 
 def train(hyperparams=None, data_path='data/emb', plot=True):
+    model_type = hyperparams['model_type']
     num_epochs = hyperparams['num_epochs']
     ##feat_drop = hyperparams['feat_drop']
     in_feats = hyperparams['in_feats']
@@ -380,14 +387,14 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     neo4j_user = "neo4j"
     neo4j_password = "0vZCoYqO6E9YkZRSFsdKPwHcziXu1-b0h8O9edAzWjM"
 
-    reactome_file_path = "gat/data/NCBI2Reactome.csv"
-    output_file_path = "gat/data/NCBI_gene_map.csv"
-    gene_names_file_path = "gat/data/gene_names.csv"
+    reactome_file_path = "gat/data/NCBI2Reactome_{model_type}.csv"
+    output_file_path = "gat/data/NCBI_gene_map_{model_type}.csv"
+    gene_names_file_path = "gat/data/gene_names_{model_type}.csv"
     gene_map = create_gene_map(reactome_file_path, output_file_path)
     gene_id_to_name_mapping, gene_id_to_symbol_mapping = read_gene_names(gene_names_file_path)'''
     
     model_path = os.path.join(data_path, 'models')
-    model_path = os.path.join(model_path, f'model_dim{out_feats}_lay{num_layers}_epo{num_epochs}.pth')
+    model_path = os.path.join(model_path, f'model_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.pth')
     
     ds = dataset.Dataset(data_path)
     ds_train = [ds[0]]
@@ -395,15 +402,31 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     dl_train = GraphDataLoader(ds_train, batch_size=batch_size, shuffle=True)
     dl_valid = GraphDataLoader(ds_valid, batch_size=batch_size, shuffle=False)
     
-    # Create the TAGCN model instance
-    net = model.TAGCNModel(dim_latent=out_feats, num_layers=num_layers, do_train=True).to(device)
+    net = choose_model(
+        model_type="tagcn",
+        dim_latent=out_feats,
+        num_layers=num_layers,
+        do_train=True
+    ).to(device)
 
-    # Set up the optimizer
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
 
-    # Save the best model
-    best_model = model.TAGCNModel(dim_latent=out_feats, num_layers=num_layers, do_train=True)
-    best_model.load_state_dict(copy.deepcopy(net.state_dict()))
+    best_model = choose_model(
+        model_type="tagcn",
+        dim_latent=out_feats,
+        num_layers=num_layers,
+        do_train=True
+    )
+    best_model.load_state_dict(copy.deepcopy(net.state_dict()))    
+    # # Create the TAGCN model instance
+    # net = model.TAGCNModel(dim_latent=out_feats, num_layers=num_layers, do_train=True).to(device)
+
+    # # Set up the optimizer
+    # optimizer = optim.Adam(net.parameters(), lr=learning_rate)
+
+    # # Save the best model
+    # best_model = model.TAGCNModel(dim_latent=out_feats, num_layers=num_layers, do_train=True)
+    # best_model.load_state_dict(copy.deepcopy(net.state_dict()))
 
     '''net = model.GATModel(in_feats=in_feats, out_feats=out_feats, num_layers=num_layers, num_heads=num_heads, do_train=True).to(device)
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
@@ -450,10 +473,10 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     all_embeddings_initial, cluster_labels_initial = calculate_cluster_labels(best_model, dl_train, device)
     ##print('all_embeddings_initial---------------------------------\n', all_embeddings_initial)
     all_embeddings_initial = all_embeddings_initial.reshape(all_embeddings_initial.shape[0], -1)  # Flatten 
-    save_path_heatmap_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_heatmap_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
-    save_path_matrix_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
-    save_path_pca_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_pca_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
-    save_path_t_SNE_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_t-SNE_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.png')
+    save_path_heatmap_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_heatmap_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
+    save_path_matrix_initial= os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_stId_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
+    save_path_pca_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_pca_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
+    save_path_t_SNE_initial = os.path.join(results_path, f'ggnet_p_value_two_commons_t-SNE_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.png')
         
     for data in dl_train:
         graph, _ = data
@@ -478,9 +501,9 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
         stid_df_initial = pd.DataFrame.from_dict(stid_dic_initial, orient='index')
 
         # Save to CSV
-        ##csv_save_path = 'gat/data/gene_embeddings_initial_sage.csv'
-        csv_save_path_initial = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.csv')
-        ##csv_save_path_initial = os.path.join('gat/data/', f'inhibition_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.csv')
+        ##csv_save_path = 'gat/data/gene_embeddings_initial_sage_{model_type}.csv'
+        csv_save_path_initial = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.csv')
+        ##csv_save_path_initial = os.path.join('gat/data/', f'inhibition_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.csv')
         stid_df_initial.to_csv(csv_save_path_initial, index_label='stId')
                 
         ##print('stid_dic_initial=======================\n',stid_dic_initial) 
@@ -506,7 +529,7 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     summary_  = f"Silhouette Score: {silhouette_avg_}\n"
     summary_ += f"Davies-Bouldin Index: {davies_bouldin_}\n"
 
-    save_file_= os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.txt')
+    save_file_= os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.txt')
     with open(save_file_, 'w') as f:
         f.write(summary_)
 
@@ -598,10 +621,10 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     cos_sim /= np.outer(norms, norms)
 
     if plot:
-        loss_path = os.path.join(results_path, f'ggnet_p_value_two_commons_loss_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
-        f1_path = os.path.join(results_path, f'ggnet_p_value_two_commons_f1_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
-        max_f1_path = os.path.join(results_path, f'ggnet_p_value_two_commons_max_f1_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
-        matrix_path = os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
+        loss_path = os.path.join(results_path, f'ggnet_p_value_two_commons_loss_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
+        f1_path = os.path.join(results_path, f'ggnet_p_value_two_commons_f1_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
+        max_f1_path = os.path.join(results_path, f'ggnet_p_value_two_commons_max_f1_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
+        matrix_path = os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
  
         draw_loss_plot(loss_per_epoch_train, loss_per_epoch_valid, loss_path)
         draw_max_f1_plot(max_f1_scores_train, max_f1_scores_valid, max_f1_path)
@@ -609,10 +632,10 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
 
     torch.save(best_model.state_dict(), model_path)
 
-    save_path_pca = os.path.join(results_path, f'ggnet_p_value_two_commons_pca_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
-    save_path_t_SNE = os.path.join(results_path, f'ggnet_p_value_two_commons_t-SNE_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
-    save_path_heatmap_= os.path.join(results_path, f'ggnet_p_value_two_commons_heatmap_stId_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
-    save_path_matrix = os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_stId_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.png')
+    save_path_pca = os.path.join(results_path, f'ggnet_p_value_two_commons_pca_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
+    save_path_t_SNE = os.path.join(results_path, f'ggnet_p_value_two_commons_t-SNE_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
+    save_path_heatmap_= os.path.join(results_path, f'ggnet_p_value_two_commons_heatmap_stId_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
+    save_path_matrix = os.path.join(results_path, f'ggnet_p_value_two_commons_matrix_stId_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.png')
     
     cluster_stId_dict = {}  # Dictionary to store clusters and corresponding stIds
     significant_stIds = []  # List to store significant stIds
@@ -645,16 +668,16 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
         stid_df_final = pd.DataFrame.from_dict(stid_dic, orient='index')
 
         # Save to CSV
-        ##csv_save_path = 'gat/data/gene_embeddings_final_sage.csv'
-        csv_save_path_final = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_final.csv')
+        ##csv_save_path = 'gat/data/gene_embeddings_final_sage_{model_type}.csv'
+        csv_save_path_final = os.path.join('data/', f'ggnet_p_value_two_commons_gene_embeddings_lr{learning_rate}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_final_{model_type}.csv')
         stid_df_final.to_csv(csv_save_path_final, index_label='stId')
         
         '''gene_embeddings_initial = pd.DataFrame.from_dict(all_embeddings_initial)##, orient='index')
-        save_gene_embeddings_initial = os.path.join(results_path, f'gene_embeddings_lr{learning_rate}__dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial.csv')
+        save_gene_embeddings_initial = os.path.join(results_path, f'gene_embeddings_lr{learning_rate}__dim{out_feats}_lay{num_layers}_epo{num_epochs}_initial_{model_type}.csv')
         gene_embeddings_initial.to_csv(save_gene_embeddings_initial, index_label='stId')
 
         gene_embeddings_final = pd.DataFrame.from_dict(all_embeddings)##, orient='index')
-        save_gene_embeddings_final = os.path.join(results_path, f'gene_embeddings_lr{learning_rate}__dim{out_feats}_lay{num_layers}_epo{num_epochs}_final.csv')
+        save_gene_embeddings_final = os.path.join(results_path, f'gene_embeddings_lr{learning_rate}__dim{out_feats}_lay{num_layers}_epo{num_epochs}_final_{model_type}.csv')
         gene_embeddings_final.to_csv(save_gene_embeddings_final, index_label='stId')  ''' 
                    
         for node, cluster in zip(nx_graph.nodes, cluster_labels):
@@ -699,7 +722,12 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     visualize_embeddings_pca(all_embeddings, cluster_labels, stid_list, save_path_pca)
     silhouette_avg = silhouette_score(all_embeddings, cluster_labels)
     davies_bouldin = davies_bouldin_score(all_embeddings, cluster_labels)
-
+    
+    # --- Compare clustering consistency (stability ARI) ---
+    ari_stability = adjusted_rand_score(cluster_labels_initial, cluster_labels)
+    print("ari_stability###########################:")
+    print("ari_stability###########################:", ari_stability)
+    print(f"ari_stability###########################: {ari_stability}")
     print(f"Silhouette Score%%%%%%%%%%%%###########################: {silhouette_avg}")
     print(f"Davies-Bouldin Index: {davies_bouldin}")
 
@@ -709,8 +737,9 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     summary += f"Best F1 Score: {max_f1_train}\n"
     summary += f"Silhouette Score: {silhouette_avg}\n"
     summary += f"Davies-Bouldin Index: {davies_bouldin}\n"
+    summary += f"Adjusted Rand Index (stability): {ari_stability}\n"
 
-    save_file = os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}.txt')
+    save_file = os.path.join(results_path, f'ggnet_p_value_two_commons_head{num_heads}_dim{out_feats}_lay{num_layers}_epo{num_epochs}_{model_type}.txt')
     with open(save_file, 'w') as f:
         f.write(summary)
 
@@ -728,13 +757,52 @@ def train(hyperparams=None, data_path='data/emb', plot=True):
     ##  save_to_neo4j(graph_train, stid_dic, stid_mapping, gene_map, gene_id_to_name_mapping, gene_id_to_symbol_mapping, neo4j_uri, neo4j_user, neo4j_password)
        
     '''gene_embeddings_initial = pd.DataFrame.from_dict(all_embeddings_initial)
-    gene_embeddings_initial.to_csv('gat/data/gene_embeddings_initial.csv', index_label='stId')
+    gene_embeddings_initial.to_csv('gat/data/gene_embeddings_initial_{model_type}.csv', index_label='stId')
 
     ##gene_embeddings_final = pd.DataFrame.from_dict(all_embeddings, orient='index')
     gene_embeddings_final = pd.DataFrame.from_dict(all_embeddings)
-    gene_embeddings_final.to_csv('gat/data/gene_embeddings_final.csv', index_label='stId')'''
+    gene_embeddings_final.to_csv('gat/data/gene_embeddings_final_{model_type}.csv', index_label='stId')'''
 
     return model_path
+
+def choose_model_(model_type, in_feats, hidden_feats, out_feats):
+    if model_type == 'GraphSAGE':
+        return GraphSAGE(in_feats, hidden_feats, out_feats)
+    elif model_type == 'GAT':
+        return GAT(in_feats, hidden_feats, out_feats, num_heads=1)
+    elif model_type == 'GCN':
+        return GCN(in_feats, hidden_feats, out_feats)
+    elif model_type == 'GIN':
+        return GIN(in_feats, hidden_feats, out_feats)
+        return GCN(in_feats, hidden_feats, out_feats)
+    elif model_type == 'ChebNet':
+        return ChebNet(in_feats, hidden_feats, out_feats)
+    else:
+        raise ValueError("Invalid model type. Choose from ['GraphSAGE', 'GAT', 'GCN', 'GIN', 'ChebNet'].")
+
+def choose_model(model_type, **kwargs):
+    model_type = model_type.lower()
+
+    if model_type == "graphsage":
+        return model.SAGEModel(**kwargs)
+
+    elif model_type == "gat":
+        return model.GATModel(**kwargs)
+
+    elif model_type == "gcn":
+        return model.GCNModel(**kwargs)
+
+    elif model_type == "gin":
+        return model.GINModel(**kwargs)
+
+    elif model_type == "chebnet":
+        return model.ChebNetModel(**kwargs)
+
+    elif model_type == "tagcn":
+        return model.TAGCNModel(**kwargs)
+
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
 
 def plot_cosine_similarity_matrix_for_clusters_with_values(embeddings, stids, save_path):
     cos_sim = np.dot(embeddings, np.array(embeddings).T)
@@ -774,12 +842,12 @@ def create_gene_map(reactome_file, output_file):
     Extracts gene IDs with the same gene STID and saves them to a new CSV file.
 
     Parameters:
-    reactome_file (str): Path to the NCBI2Reactome.csv file.
+    reactome_file (str): Path to the NCBI2Reactome_{model_type}.csv file.
     output_file (str): Path to save the output CSV file.
     """
     gene_map = {}  # Dictionary to store gene IDs for each gene STID
 
-    # Read the NCBI2Reactome.csv file and populate the gene_map
+    # Read the NCBI2Reactome_{model_type}.csv file and populate the gene_map
     with open(reactome_file, 'r') as file:
         reader = csv.reader(file, delimiter='\t')
         for row in reader:

@@ -8,8 +8,8 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description='Create embeddings and save to disk.')
-    parser.add_argument('--data_dir', type=str, default='gat/data/emb', help='Directory to save the data.')
-    parser.add_argument('--output-file', type=str, default='gat/data/emb/embeddings.pkl', help='File to save the embeddings')
+    parser.add_argument('--data_dir', type=str, default='data/emb', help='Directory to save the data.')
+    parser.add_argument('--output-file', type=str, default='data/emb/embeddings.pkl', help='File to save the embeddings')
     parser.add_argument('--p_value', type=float, default=0.05, help='P-value threshold for creating embeddings.')
     parser.add_argument('--save', type=bool, default=True, help='Flag to save embeddings.')
     parser.add_argument('--num_epochs', type=int, default=5000, help='Number of epochs for training.')
@@ -24,11 +24,11 @@ def main():
     args = parser.parse_args()
 
     # Main script to create embeddings and save to disk
-    '''utils.create_embedding_with_proteins(
-        ##p_value=args.p_value, 
-        save=args.save, 
-        data_dir=args.data_dir
-    )'''
+    # utils.create_embedding_with_genes(
+    #     ##p_value=args.p_value, 
+    #     save=args.save, 
+    #     data_dir=args.data_dir
+    # )
 
     hyperparameters = {
         'num_epochs': args.num_epochs,
@@ -63,4 +63,4 @@ if __name__ == '__main__':
 ## python __embedding_pathway_gcn_gene/gat_embedding.py --out_feats 256 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 100
 ## python embedding_pathway_gcn/gat_embedding.py --out_feats 128 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 2002
 ## python gat/gat_embedding.py --out_feats 128 --num_layers 3 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 2002
-## python embedding/embedding.py --in_feats 256 --out_feats 256 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 5
+## python embedding/gat_embedding.py --in_feats 256 --out_feats 256 --num_layers 2 --num_heads 2 --batch_size 1 --lr 0.0001 --num_epochs 5

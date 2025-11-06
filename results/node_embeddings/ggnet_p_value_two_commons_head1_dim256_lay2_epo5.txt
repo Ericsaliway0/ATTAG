@@ -1,0 +1,7 @@
+Epoch 5 - Max F1 Train: 0.8879679513744992, Max F1 Valid: 0.9467486589035718
+Best Train Loss: 0.020253608003258705
+Best Validation Loss: 0.020253608003258705
+Best F1 Score: 0.8879679513744992
+Silhouette Score: 0.5269202589988708
+Davies-Bouldin Index: 0.500923399654164
+Adjusted Rand Index (stability): 0.8708027918092516

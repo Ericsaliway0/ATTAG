@@ -74,7 +74,7 @@ def create_embedding_with_genes(p_value=0.05, save=True, data_dir='data/emb'):
     return graph_train, graph_test
 
 # Function to create embeddings using GAT model
-def create_embeddings(load_model=True, save=True, data_dir='data/emb', hyperparams=None, plot=True):
+def create_embeddings_ori(load_model=True, save=True, data_dir='data/emb', hyperparams=None, plot=True):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load dataset and set up directories
@@ -119,5 +119,118 @@ def create_embeddings(load_model=True, save=True, data_dir='data/emb', hyperpara
             emb_path = os.path.join(emb_dir, f'{name[:-4]}.pth')
             torch.save(embedding.cpu(), emb_path)
             print(f"Embedding for {name} saved to {emb_path}")
+
+    return embedding_dict
+
+import os
+import torch
+from tqdm import tqdm
+
+def choose_model(model_type, dim_latent, num_layers, heads=2, **kwargs):
+    model_type = model_type.lower()
+
+    if model_type == "graphsage":
+        return model.SAGEModel(dim_latent=dim_latent, num_layers=num_layers)
+
+    elif model_type == "gat":
+        return model.GATModel(
+            in_feats=dim_latent,
+            out_feats=dim_latent,
+            num_layers=num_layers,
+            num_heads=heads
+        )
+
+    elif model_type == "gcn":
+        return model.GCNModel(dim_latent=dim_latent, num_layers=num_layers)
+
+    elif model_type == "gin":
+        return model.GINModel(dim_latent=dim_latent, num_layers=num_layers)
+
+    elif model_type == "chebnet":
+        return model.ChebNetModel(dim_latent=dim_latent, num_layers=num_layers)
+
+    elif model_type == "tagcn":
+        return model.TAGCNModel(dim_latent=dim_latent, num_layers=num_layers)
+
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+
+def create_embeddings(
+    load_model=True,
+    save=True,
+    data_dir='data/emb',
+    hyperparams=None,
+    plot=True
+):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # ----------------------------------------------------
+    # Load Dataset
+    # ----------------------------------------------------
+    data = dataset.Dataset(data_dir)      # <-- must implement __getitem__ return (graph, name)
+    emb_dir = os.path.abspath(os.path.join(data_dir, 'embeddings'))
+    os.makedirs(emb_dir, exist_ok=True)
+
+    # ----------------------------------------------------
+    # Model Hyperparameters
+    # ----------------------------------------------------
+    model_type = hyperparams.get("model_type", "tagcn")   # default: TAGCN
+    dim_latent = hyperparams["out_feats"]
+    num_layers = hyperparams["num_layers"]
+
+    # optional for GAT
+    num_heads = hyperparams.get("num_heads", 4)
+
+    # ----------------------------------------------------
+    # Build Model
+    # ----------------------------------------------------
+    net = choose_model(
+        model_type=model_type,
+        dim_latent=dim_latent,
+        num_layers=num_layers,
+        do_train=False,
+        heads=num_heads      # accepted only by GAT; ignored by other models
+    ).to(device)
+
+    # ----------------------------------------------------
+    # Load / Train model
+    # ----------------------------------------------------
+    model_path = os.path.join(data_dir, "models", "model.pth")
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
+    if load_model and os.path.exists(model_path):
+        print(f"[INFO] Loading pre-trained model from: {model_path}")
+        net.load_state_dict(torch.load(model_path, map_location=device))
+    else:
+        print("[INFO] Training model ...")
+        model_path = train.train(
+            hyperparams=hyperparams,
+            data_path=data_dir,
+            plot=plot
+        )
+        net.load_state_dict(torch.load(model_path, map_location=device))
+
+    net.eval()
+
+    # ----------------------------------------------------
+    # Generate embeddings
+    # ----------------------------------------------------
+    embedding_dict = {}
+
+    for idx in tqdm(range(len(data)), desc="Generating embeddings"):
+        graph, name = data[idx]
+        graph = graph.to(device)
+
+        with torch.no_grad():
+            # ALWAYS get embeddings through unified API
+            embedding = net.get_node_embeddings(graph)
+
+        embedding_dict[name] = embedding.cpu()
+
+        if save:
+            emb_path = os.path.join(emb_dir, f"{name[:-4]}.pth")
+            torch.save(embedding.cpu(), emb_path)
+            print(f"[SAVED] Embedding for {name} → {emb_path}")
 
     return embedding_dict
