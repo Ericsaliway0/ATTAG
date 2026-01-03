@@ -10,7 +10,7 @@ import argparse
 def main():
     parser = argparse.ArgumentParser(description='Create embeddings and save to disk.')
 
-    # ===== Arguments =====
+
     parser.add_argument('--data_dir', type=str, default='data/emb',
                         help='Directory to save the data.')
 
@@ -47,7 +47,6 @@ def main():
     parser.add_argument('--print-embeddings', action='store_true',
                         help='Print embedding dict.')
 
-    # UPDATED: added TAGCN & consistent model list
     parser.add_argument(
         '--model_type',
         type=str,
@@ -57,13 +56,11 @@ def main():
     )
 
     args = parser.parse_args()
-    # utils.create_embedding_with_genes(
-    #     ##p_value=args.p_value, 
-    #     save=args.save, 
-    #     data_dir=args.data_dir
-    # )
-    
-    # ================ Collect hyperparameters ================
+    utils.create_embedding_with_genes(
+        save=args.save, 
+        data_dir=args.data_dir
+    )
+
     hyperparameters = {
         'model_type': args.model_type,
         'num_epochs': args.num_epochs,
@@ -76,7 +73,7 @@ def main():
         'lr': args.lr,
     }
 
-    # ================ Create embeddings ================
+
     embedding_dict = utils.create_embeddings(
         data_dir=args.data_dir,
         load_model=False,
@@ -86,7 +83,7 @@ def main():
     if args.print_embeddings:
         print(embedding_dict)
 
-    # ================ Save to pickle ================
+
     os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
     with open(args.output_file, 'wb') as f:
         pickle.dump(embedding_dict, f)

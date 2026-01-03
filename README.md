@@ -50,3 +50,24 @@ The dataset is obtained from the following sources:
       
 8. For prediction, run the following command:
    - `python attag/train.py --model_type ATTAG --net_type ppnet --score_threshold 0.99 --learning_rate 0.001 --num_epochs 300`
+
+
+
+<h2>Citation</h2>
+
+<p>
+If you find this project useful for your research, please cite it using the following BibTeX entry:
+</p>
+
+<pre><code>@article{LiTCBB2025TopoGNN,
+  author  = {Li, Sa and Shader, Jonah and Bhattacharya, Anirban and Ma, Tianle},
+  title   = {Integration of Multi-Omics Data with Topology Adaptive Graph Convolutional Network for Cancer Driver Gene Identification},
+  journal = {IEEE Transactions on Computational Biology and Bioinformatics},
+  year    = {2025},
+  month   = nov,
+  pages   = {PP},
+  doi     = {10.1109/TCBBIO.2025.3636976},
+  url     = {https://ieeexplore.ieee.org/document/3636976},
+  note    = {Epub ahead of print. PMID: 41308109}
+}
+</code></pre>
