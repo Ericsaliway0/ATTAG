@@ -7,7 +7,7 @@ submitted to the **IEEE Transactions on Computational Biology and Bioinformatics
 on **January 27, 2025**.  
 
 DOI: 10.1109/TCBBIO.2025.3636976
-Available at: https://ieeexplore.ieee.org/document/3636976
+Available at: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=11270241
 
 ![Alt text](images/__overview_framework.png)
 
