@@ -6,7 +6,11 @@ This repository contains the implementation of our project,
 submitted to the **IEEE Transactions on Computational Biology and Bioinformatics**,  
 on **January 27, 2025**.  
 
-DOI: 10.1109/TCBBIO.2025.3636976
+Paper: https://www.computer.org/csdl/journal/bb/5555/01/11270241/2bZpFKAJyHS
+
+🔗 DOI: https://doi.org/10.1109/TCBBIO.2025.3636976
+
+🔗 PMID: https://pubmed.ncbi.nlm.nih.gov/41308109/
 Available at: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=11270241
 
 ![Alt text](images/__overview_framework.png)
