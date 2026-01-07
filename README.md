@@ -1,10 +1,13 @@
 # ATTAG
 ## Integration of Multi-Omics Data with Topology Adaptive Graph Convolutional Network for Cancer Driver Gene Identification
 
-This repository contains the code for our project,  
-**"Integration of Multi-Omics Data with Topology Adaptive Graph Convolutional Network for Cancer Driver Gene Identification,"**  
-submitted to the **IEEE Transactions on Computational Biology and Bioinformatic**,  
+This repository contains the implementation of our project, 
+**"Integration of Multi-Omics Data with Topology-Adaptive Graph Convolutional Network for Cancer Driver Gene Identification,,"**  
+submitted to the **IEEE Transactions on Computational Biology and Bioinformatics**,  
 on **January 27, 2025**.  
+
+DOI: 10.1109/TCBBIO.2025.3636976
+Available at: https://ieeexplore.ieee.org/document/3636976
 
 ![Alt text](images/__overview_framework.png)
 
